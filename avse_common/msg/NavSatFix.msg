@@ -6,7 +6,7 @@ std_msgs/Header header
   uint32 seq
   time stamp
   string frame_id
-sensor_msgs/NavSatStatus status
+avse_common/NavSatStatus NavSatStatus
   int8 STATUS_NO_FIX=-1
   int8 STATUS_FIX=0
   int8 STATUS_SBAS_FIX=1
