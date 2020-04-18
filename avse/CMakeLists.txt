@@ -8,7 +8,7 @@ project(avse)
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  avse_common
+  sensor_msgs
   rospy
   std_msgs
   message_generation
@@ -16,7 +16,6 @@ find_package(catkin REQUIRED COMPONENTS
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
-
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -107,7 +106,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES avse
-  CATKIN_DEPENDS avse_common rospy message_runtime
+  CATKIN_DEPENDS sensor_msgs rospy message_runtime
 #  DEPENDS system_lib
 )
 
