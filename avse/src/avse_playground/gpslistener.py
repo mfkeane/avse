@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 import rospy
 from std_msgs.msg import String
-from avse_common.msg import NavSatFix
+from sensor_msgs.msg import NavSatFix
 
 def callback(data):
-    rospy.loginfo(rospy.get_caller_id() + "I heard %s", data.data)
+    global gps_lat, gps_long
+    rospy.loginfo(data.latitude)
+    gps_lat = data.latitude
+    print(gps_lat)
+
 
 def listener():
     rospy.init_node('gps_listener', anonymous=True)
