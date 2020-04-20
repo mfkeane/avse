@@ -12,6 +12,10 @@ class Server:
         self.imu = None
         self.mf = None
 
+        self.past_gps = None
+        self.past_imu = None
+        self.past_mf = None
+
         self.D = 11.824 # Magnetic Declination (Mornington)
 
 	self.heading = None
@@ -42,7 +46,7 @@ class Server:
         #self.gps.longitude
         self.compute_vse()
 
-    def gps_callback(self, imu):
+    def imu_callback(self, imu):
         self.imu = imu
         #self.imu.orientation.x
         #self.imu.orientation.y
@@ -52,7 +56,7 @@ class Server:
         #self.imu.angular_velocity.y
         self.compute_vse()
 
-    def gps_callback(self, mf):
+    def mf_callback(self, mf):
         self.mf = mf
         #self.mf.magnetic_field.x
         #self.mf.magnetic_field.y
@@ -64,9 +68,9 @@ if __name__ == '__main__':
 
     server = Server()
 
-    rospy.Subscriber("/android/fix", NavSatFix, gps_callback)
-    ropsy.Subscriber("/android/imu", Imu, imu_callback)
-    ropsy.Subscriber("/android/magnetometer", MagneticField, mf_callback)
+    rospy.Subscriber("/android/fix", NavSatFix, server.gps_callback)
+    ropsy.Subscriber("/android/imu", Imu, server.imu_callback)
+    ropsy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
 
     rospy.spin()
 

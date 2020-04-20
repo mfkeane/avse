@@ -66,7 +66,7 @@ git clone https://github.com/mfkeane/avse.git
 ```
 2. Clone common_msgs repo to the same ROS Workspace
 ```sh
-git clone https://github.com/ros/common_msgs.git
+git clone https://github.com/mfkeane/common_msgs.git
 ```
 3. Build the ROS Workspace with catkin build
 4. Source the ROS Workspace
