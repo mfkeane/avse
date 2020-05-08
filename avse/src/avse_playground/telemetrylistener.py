@@ -7,7 +7,7 @@ from geometry_msgs.msg import Vector3, Quaternion
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 
 import numpy as np
-get_ipython().magic(u'matplotlib inline')
+#%matplotlib inline
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from scipy.stats import norm
@@ -33,12 +33,14 @@ class Server:
         self.D = 11.824 # Magnetic Declination (Mornington)
 
 	self.heading = 0
-        self.velocity = Vector3(0,0,0)
-        self.position = Vector3(0,0,0)
+        self.velocity = Vector3(x=0,y=0,z=0)
+        self.position = Vector3(x=0,y=0,z=0)
 
 	self.past_heading = []
-        self.past_velocity = []
-        self.past_position = []
+        self.past_velocity_x = []
+        self.past_velocity_y = []
+        self.past_position_x = []
+        self.past_position_y = []
 	
 	self.dx = []
         self.dy = []
@@ -55,9 +57,10 @@ class Server:
         #self.position_time = None
 
 
-    def telemetry_plot(self)
-	x0 = self.past_position.x
-        x1 = self.past_position.y
+    def telemetry_plot(self):
+        x0=self.past_position_x
+        x1=self.past_position_y
+        x2=self.past_heading
 
         mx = np.cumsum(self.dx)
 	my = np.cumsum(self.dy)
@@ -76,22 +79,25 @@ class Server:
         #cbar.ax.set_xlabel(u'm')
 
         # Start/Goal
-        plt.scatter(x0[0],x1[0], s=60, label='Start', c='g')
-        plt.scatter(x0[-1],x1[-1], s=60, label='Goal', c='r')
+	if len(x0)>2:
+            plt.scatter(x0[0],x1[0], s=60, label='Start', c='g')
+            plt.scatter(x0[-1],x1[-1], s=60, label='Goal', c='r')
 
-        plt.xlabel('X [m]')
-        plt.ylabel('Y [m]')
-        plt.title('Position')
-        plt.legend(loc='best')
-        plt.axis('equal')
-        #plt.tight_layout()
+            plt.xlabel('X [m]')
+            plt.ylabel('Y [m]')
+            plt.title('Position')
+            plt.legend(loc='best')
+            plt.axis('equal')
+            #plt.tight_layout()
 
-        plt.savefig('Extended-Kalman-Filter-CHCV-Position.png',
+            plt.savefig('Basic-GPS-Position.png',
                 dpi=72, transparent=True, bbox_inches='tight')
 
-    def mf_callback(self):
+    def mf_callback(self,mf):
+        self.mf = mf
 	self.past_heading.append(self.heading)        
 	self.heading = math.atan2(self.mf.magnetic_field.y, self.mf.magnetic_field.x)*(180/math.pi) + self.D
+        self.past_mf = mf
 
     def gps_callback(self, gps):
         self.gps = gps
@@ -100,23 +106,22 @@ class Server:
 
 	# Lon/Lat to m
 	RadiusEarth = 6378388.0 # m
-	arc= 2.0*np.pi*(RadiusEarth+gps.altitude)/360.0 # m/°
+	arc= 2.0*np.pi*(RadiusEarth+gps.altitude)/360.0 # m/degree
 
 	self.dx.append(arc * np.cos(gps.latitude*np.pi/180.0) * np.hstack((0.0, np.diff(gps.longitude)))) # in m
 	self.dy.append(arc * np.hstack((0.0, np.diff(latitude)))) # in m
 
 	self.distance = self.distance + np.sqrt(self.dx[-1]**2+self.dy[-1]**2)
        
-	self.past_position.append(self.position)
+	self.past_position_x.append(self.position.x)
+	self.past_position_y.append(self.position.y)
 	self.position = Vector3(self.position.x+self.dx[-1], self.position.y+self.dy[-1], 0)
 
-        self.velocity = Vector3((self.position.x-self.past_position[-1].x)/self.gpsdt, (self.position.y-self.past_position[-1].y)/self.gpsdt, 0)
+        self.velocity = Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, 0)
 
 	self.past_gps = gps
-
-    def mf_callback(self, mf):
-        self.mf = mf
-	self.past_mf = mf
+        print("position is: " + self.position)
+	print("velocity is: " + self.velocity)
 
 
 if __name__ == '__main__':
@@ -126,7 +131,7 @@ if __name__ == '__main__':
 
     rospy.Subscriber("/android/fix", NavSatFix, server.gps_callback)
     #ropsy.Subscriber("/android/imu", Imu, server.imu_callback)
-    ropsy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
+    rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
 
     server.telemetry_plot()
 
