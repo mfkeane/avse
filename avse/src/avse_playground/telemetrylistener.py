@@ -6,6 +6,9 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Vector3, Quaternion
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 
+
+import utm
+
 import numpy as np
 #%matplotlib inline
 import matplotlib.dates as mdates
@@ -32,9 +35,9 @@ class Server:
 
         self.D = 11.824 # Magnetic Declination (Mornington)
 
-	self.heading = 0
-        self.velocity = Vector3(x=0,y=0,z=0)
-        self.position = Vector3(x=0,y=0,z=0)
+	self.heading = 0.0
+        self.velocity = Vector3(x=0.0,y=0.0,z=0.0)
+        self.position = Vector3(x=0.0,y=0.0,z=0.0)
 
 	self.past_heading = []
         self.past_velocity_x = []
@@ -47,9 +50,9 @@ class Server:
 	
         self.time = 0.0
 	self.dt = 0.02
-	self.gpsdt = 0
-        self.gpstime = 0
-        self.distance = 0
+	self.gpsdt = 0.0
+        self.gpstime = 0.0
+        self.distance = 0.0
 
 	self.numstates = 4
 	#self.heading_time = None
@@ -92,6 +95,7 @@ class Server:
 
             plt.savefig('Basic-GPS-Position.png',
                 dpi=72, transparent=True, bbox_inches='tight')
+	
 
     def mf_callback(self,mf):
         self.mf = mf
@@ -101,27 +105,34 @@ class Server:
 
     def gps_callback(self, gps):
         self.gps = gps
-        self.gpsdt = gps.header.stamp - self.gpstime
-        self.gpstime = gps.header.stamp
+        self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
+        self.gpstime = gps.header.stamp.to_sec()
 
 	# Lon/Lat to m
-	RadiusEarth = 6378388.0 # m
-	arc= 2.0*np.pi*(RadiusEarth+gps.altitude)/360.0 # m/degree
+	#RadiusEarth = 6378388.0 # m
+	#arc= 2.0*np.pi*(RadiusEarth+gps.altitude)/360.0 # m/degree
 
-	self.dx.append(arc * np.cos(gps.latitude*np.pi/180.0) * np.hstack((0.0, np.diff(gps.longitude)))) # in m
-	self.dy.append(arc * np.hstack((0.0, np.diff(latitude)))) # in m
-
-	self.distance = self.distance + np.sqrt(self.dx[-1]**2+self.dy[-1]**2)
+        if self.past_gps is not None:
+             present = utm.from_latlon(gps.latitude,gps.longitude)
+             past = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
+             self.dx.append(present[0]-past[0])
+             self.dy.append(present[1]-past[1])
+	#    self.dx.append(arc * np.cos(gps.latitude*np.pi/180.0) * (gps.longitude-self.past_gps.longitude)) # in m
+	#    self.dy.append(arc * (gps.latitude-self.past_gps.latitude)) # in m
+        else:
+            self.dx.append(0)
+	    self.dy.append(0)
+	#self.distance = self.distance + np.sqrt(self.dx[-1]**2+self.dy[-1]**2)
        
 	self.past_position_x.append(self.position.x)
 	self.past_position_y.append(self.position.y)
-	self.position = Vector3(self.position.x+self.dx[-1], self.position.y+self.dy[-1], 0)
+	self.position = Vector3(self.past_position_x[-1]+self.dx[-1], self.past_position_y[-1]+self.dy[-1], 0)
 
         self.velocity = Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, 0)
 
 	self.past_gps = gps
-        print("position is: " + self.position)
-	print("velocity is: " + self.velocity)
+        print("position is: " + str(self.position))
+	print("velocity is: " + str(self.velocity))
 
 
 if __name__ == '__main__':
