@@ -38,8 +38,11 @@ class Server:
 	self.heading = 0.0
         self.velocity = Vector3(x=0.0,y=0.0,z=0.0)
         self.position = Vector3(x=0.0,y=0.0,z=0.0)
+        self.acceleration = Vector3(x=0.0,y=0.0,z=0.0)
 
 	self.past_heading = []
+        self.past_acceleration_x = []
+        self.past_acceleration_y = []
         self.past_velocity_x = []
         self.past_velocity_y = []
         self.past_position_x = []
@@ -59,45 +62,43 @@ class Server:
         #self.velocity_time = None
         #self.position_time = None
 
+    def kalman(self):
+        #x_k_mat = [x_k, v_k]^T
+        #z_k_mat = [z_k]
+        #x_(k+1) = x_k + v_k*delta_t + 1/2*a*delta_t^2 = F*x_k + G*a
+        #v_(k+1) = v_k + a*delta_t                     = F*x_k + G*a
+	#z_k = x_k + epsilon_noise
 
-    def telemetry_plot(self):
-        x0=self.past_position_x
-        x1=self.past_position_y
-        x2=self.past_heading
+        delta_t = self.gpsdt
 
-        mx = np.cumsum(self.dx)
-	my = np.cumsum(self.dy)
+	xk = [[self.position.x, self.position.y], [self.velocity.x, self.velocity.y]]
+        ak = [self.acceleration.x, self.acceleration.y]
 
-        # Start/Goal
-	if len(x0)==1:
-            fig = plt.figure(figsize=(16,9))
-            # EKF State
-       	    #plt.quiver(x0,x1,np.cos(x2), np.sin(x2), color='#94C600',units='xy', width=0.05, scale=0.5)
-            #plt.plot(x0,x1, label='Position', c='k', lw=5)
+        F = [[1, delta_t], [0, 1]]
+        G = [[0.5*(delta_t)^2], [delta_t]]
 
-            # Measurements
-            #plt.scatter(mx[::5],my[::5], s=50, label='GPS Measurements', marker='+')
-            #cbar=plt.colorbar(ticks=np.arange(20))
-            #cbar.ax.set_ylabel(u'EPE', rotation=270)
-            #cbar.ax.set_xlabel(u'm')	
-            
-            #plt.scatter(x0[0],x1[0], s=60, label='Start', c='g')
-            #plt.scatter(x0[-1],x1[-1], s=60, label='Goal', c='r')
+        H = [1, 0]
 
-            plt.xlabel('X [m]')
-            plt.ylabel('Y [m]')
-            plt.title('Position')
-            #plt.legend(loc='best')
-            #plt.axis('equal')
-            #plt.tight_layout()
+        #x_nextmean = F*x_mean
+        #P_nextk = F*Pk*F^T + G*sigma_a^2*G^T
 
-        
-	if len(x0)>0:
-            plt.plot(x0[-1],x1[-1],'*')
-            plt.axis('equal')
-            plt.draw()
-            plt.pause(0.000000001)
-	    plt.savefig('Basic-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
+              
+	# Measurements, incorporate knowledge of zk into xk
+        #y = zk - H*xk
+        # R = [sigma_a^2]
+        #Sk = H*Pk*H^T + R
+        #K = Pk*H^T*Sk^T   #kalman gain
+        #x_nextmean_givenz = x_mean + K*y
+        #I = eyes() #identity matrix
+        #P_nextk_givenz = (I - K*H)*Pk
+
+    def imu_callback(self,imu):
+        self.imu = imu
+        self.past_acceleration_x.append(self.acceleration.x)
+        self.past_acceleration_y.append(self.acceleration.y)
+        self.acceleration.x = self.imu.acceleration.x
+        self.acceleration.y = self.imu.acceleration.y
+        self.past_imu = imu
 
     def mf_callback(self,mf):
         self.mf = mf
@@ -159,7 +160,7 @@ class Server:
             plt.draw()
             plt.pause(0.000000001)
             plt.plot(x0,x1)
-           #plt.quiver(x0,x1,np.cos(x2), np.sin(x2), color='#94C600',units='xy', width=0.05, scale=0.5)
+            #plt.quiver(x0,x1,np.cos(x2), np.sin(x2), color='#94C600',units='xy', width=0.05, scale=0.5)
 #Basic-GPS-Position
             plt.savefig('Basic-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
 
@@ -168,9 +169,9 @@ if __name__ == '__main__':
     
     server = Server()
 
-    rospy.Subscriber("/android/fix", NavSatFix, server.gps_callback)
-    #ropsy.Subscriber("/android/imu", Imu, server.imu_callback)
+    ropsy.Subscriber("/android/imu", Imu, server.imu_callback)
     rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
+    rospy.Subscriber("/android/fix", NavSatFix, server.gps_callback)
 
     #server.telemetry_plot()
     plt.ion
