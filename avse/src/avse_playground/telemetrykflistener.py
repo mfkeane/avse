@@ -37,7 +37,9 @@ class Server:
 
 	self.heading = 0.0
         self.velocity = Vector3(x=0.0,y=0.0,z=0.0)
+        self.k_velocity = Vector3(x=0.0,y=0.0,z=0.0)
         self.position = Vector3(x=0.0,y=0.0,z=0.0)
+        self.k_position = Vector3(x=0.0,y=0.0,z=0.0)
         self.acceleration = Vector3(x=0.0,y=0.0,z=0.0)
 
 	self.past_heading = []
@@ -51,6 +53,17 @@ class Server:
 	self.dx = []
         self.dy = []
 	
+	self.x_k = np.array([[0],[0],[0],[0]])
+        #self.Pk = np.array([[0,0],[0,0]])
+	#self.x_next = np.array([[0,0],[0,0]])
+        #self.P_next = np.array([[0,0],[0,0]])
+
+        self.kf_past_velocity_x = [0]
+        self.kf_past_velocity_y = [0]
+        self.kf_past_position_x = [0]
+        self.kf_past_position_y = [0]
+        self.P = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+
         self.time = 0.0
 	self.dt = 0.02
 	self.gpsdt = 0.0
@@ -63,41 +76,44 @@ class Server:
         #self.position_time = None
 
     def kalman(self):
-        #x_k_mat = [x_k, v_k]^T
-        #z_k_mat = [z_k]
-        #x_(k+1) = x_k + v_k*delta_t + 1/2*a*delta_t^2 = F*x_k + G*a
-        #v_(k+1) = v_k + a*delta_t                     = F*x_k + G*a
-	#z_k = x_k + epsilon_noise
-
+        # Update time rate
         delta_t = self.gpsdt
 
-	xk = [[self.position.x, self.position.y], [self.velocity.x, self.velocity.y]]
-        ak = [self.acceleration.x, self.acceleration.y]
+	# Process
+	xk_1 = self.x_k
+        ak_1 = np.array([[self.acceleration.x], [self.acceleration.y]])
+        A = np.array([[1,0,delta_t,0],[0,1,0,delta_t],[0,0,1,0],[0,0,0,1]])
+        B = np.array([[0.5*(delta_t*delta_t),0],[0,0.5*(delta_t*delta_t)],[delta_t,0],[0,delta_t]])
 
-        F = [[1, delta_t], [0, 1]]
-        G = [[0.5*(delta_t)^2], [delta_t]]
+        # Measurements
+        zk = np.array([[self.position.x], [self.position.y]])
+        H = np.array([[1,0,0,0],[0,1,0,0]])
 
-        H = [1, 0]
+        # Variance Matrices
+	Q = np.array([[self.gps.position_covariance[0],0,0,0],[0,self.gps.position_covariance[3],0,0],[0,0,1,0],[0,0,0,1]])
+        R = np.array([[1,0],[0,1]])
 
-        #x_nextmean = F*x_mean
-        #P_nextk = F*Pk*F^T + G*sigma_a^2*G^T
+	# Prediction Equations
+        X_k = A.dot(xk_1) + B.dot(ak_1)
+        p = A.dot(self.P).dot(A.transpose()) + Q
 
-              
-	# Measurements, incorporate knowledge of zk into xk
-        #y = zk - H*xk
-        # R = [sigma_a^2]
-        #Sk = H*Pk*H^T + R
-        #K = Pk*H^T*Sk^T   #kalman gain
-        #x_nextmean_givenz = x_mean + K*y
-        #I = eyes() #identity matrix
-        #P_nextk_givenz = (I - K*H)*Pk
+	# Update Equations
+  	K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
+        self.x_k = X_k + K.dot(zk - H.dot(X_k))
+        self.P = (np.identity(4)-K.dot(H)).dot(p)
 
+	self.kf_past_position_x.append(self.x_k[0])
+        self.kf_past_position_y.append(self.x_k[1])
+        self.kf_past_velocity_x.append(self.x_k[2])
+        self.kf_past_velocity_y.append(self.x_k[3])
+
+	
     def imu_callback(self,imu):
         self.imu = imu
         self.past_acceleration_x.append(self.acceleration.x)
         self.past_acceleration_y.append(self.acceleration.y)
-        self.acceleration.x = self.imu.acceleration.x
-        self.acceleration.y = self.imu.acceleration.y
+        self.acceleration.x = self.imu.linear_acceleration.x
+        self.acceleration.y = self.imu.linear_acceleration.y
         self.past_imu = imu
 
     def mf_callback(self,mf):
@@ -111,29 +127,27 @@ class Server:
         self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
         self.gpstime = gps.header.stamp.to_sec()
 
-	# Lon/Lat to m
-	#RadiusEarth = 6378388.0 # m
-	#arc= 2.0*np.pi*(RadiusEarth+gps.altitude)/360.0 # m/degree
-
         if self.past_gps is not None:
              present = utm.from_latlon(gps.latitude,gps.longitude)
              past = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
              dx2 = present[0]-past[0]
              dy2 = present[1]-past[1]
-             self.dx.append(dx2) #(round(dx2,2))
-             self.dy.append(dy2) #(round(dy2,2))
-	#    self.dx.append(arc * np.cos(gps.latitude*np.pi/180.0) * (gps.longitude-self.past_gps.longitude)) # in m
-	#    self.dy.append(arc * (gps.latitude-self.past_gps.latitude)) # in m
+             self.dx.append(dx2)
+             self.dy.append(dy2)
+
         else:
             self.dx.append(0)
 	    self.dy.append(0)
-	#self.distance = self.distance + np.sqrt(self.dx[-1]**2+self.dy[-1]**2)
        
-	self.past_position_x.append(self.position.x)#round(self.position.x,2))
-	self.past_position_y.append(self.position.y)#round(self.position.y,2))
-	self.position = Vector3(self.past_position_x[-1]+self.dx[-1],self.past_position_y[-1]+self.dy[-1], 0) #round
+	self.past_position_x.append(self.position.x)
+	self.past_position_y.append(self.position.y)
+	self.position = Vector3(self.past_position_x[-1]+self.dx[-1],self.past_position_y[-1]+self.dy[-1], 0)
 
         self.velocity = Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, 0)
+
+	self.kalman()
+
+        
 
 	self.past_gps = gps
         print("position is: " + str(self.position))
@@ -160,16 +174,17 @@ class Server:
             plt.draw()
             plt.pause(0.000000001)
             plt.plot(x0,x1)
-            #plt.quiver(x0,x1,np.cos(x2), np.sin(x2), color='#94C600',units='xy', width=0.05, scale=0.5)
-#Basic-GPS-Position
-            plt.savefig('Basic-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
+            plt.plot(self.kf_past_position_x, self.kf_past_position_y)
+  
+            #Basic-GPS-Position
+            plt.savefig('KF-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
 
 if __name__ == '__main__':
     rospy.init_node('listener')
     
     server = Server()
 
-    ropsy.Subscriber("/android/imu", Imu, server.imu_callback)
+    rospy.Subscriber("/android/imu", Imu, server.imu_callback)
     rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
     rospy.Subscriber("/android/fix", NavSatFix, server.gps_callback)
 
