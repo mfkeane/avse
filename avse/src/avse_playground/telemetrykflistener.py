@@ -62,13 +62,17 @@ class Server:
         self.kf_past_velocity_y = []
         self.kf_past_position_x = []
         self.kf_past_position_y = []
-        self.P = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+        self.P = np.array([[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]])
 
         self.time = 0.0
 	self.dt = 0.02
 	self.gpsdt = 0.0
         self.gpstime = 0.0
         self.distance = 0.0
+
+	self.pitch = 0.0;
+	self.roll = 0.0;
+        self.yaw =0.0;
 
 	self.numstates = 4
 	#self.heading_time = None
@@ -78,39 +82,12 @@ class Server:
     def kalman(self):
         # Update time rate
         delta_t = self.gpsdt
-	print(delta_t)
+	#print(delta_t)
 
-	# This section doesn't work as its talking about the change in orientation from the starting orientation I think, so we still get z gravity in the x-y "flat" plane
-        # Convert Quarternion to Yaw, Roll, Pitch
-        # from https://www.kaggle.com/c/career-con-2019/discussion/85303
-        w = self.imu.orientation.w
-        x = self.imu.orientation.x
-        y = self.imu.orientation.y
-        z = self.imu.orientation.z     
-        sinr_cosp = 2 * (w * x + y * z)
-        cosr_cosp = 1 - 2 * (x**2 + y**2)
-        roll = np.arctan2(sinr_cosp, cosr_cosp)
-
-        sinp = 2 * (w * y - z * x)
-        pitch = np.where(np.abs(sinp) >= 1, np.sign(sinp) * np.pi / 2, np.arcsin(sinp))
-
-        siny_cosp = 2 * (w * z + x * y)
-        cosy_cosp = 1 - 2 * (y**2 + z**2)
-        yaw = np.arctan2(siny_cosp, cosy_cosp)
-
-	# Make x-y plane flat in terms of acceleration (no gravity component)
-        R01 = np.array([[math.cos(yaw),-math.sin(yaw),0],[math.sin(yaw),math.cos(yaw),0],[0,0,1]])
-        R12 = np.array([[math.sin(yaw),0,math.cos(yaw)],[0,1,0],[-math.cos(yaw),0,math.sin(yaw)]])
-        R23 = np.array([[1,0,0],[0,math.cos(yaw),-math.sin(yaw)],[0,math.sin(yaw),math.cos(yaw)]])
-        R03 = R01.dot(R12).dot(R23)
-
-        accel0 = np.array([[self.acceleration.x],[self.acceleration.y],[self.acceleration.z]])
-        accel3 = R03.dot(accel0)        
-        print(accel3)
-        
+	
 	# Process
 	xk_1 = self.x_k
-        ak_1 = np.array([[accel3[0][0]], [accel3[1][0]]])
+        ak_1 = np.array([[self.acceleration.x], [self.acceleration.y]])
         A = np.array([[1,0,delta_t,0],[0,1,0,delta_t],[0,0,1,0],[0,0,0,1]])
         B = np.array([[0.5*(delta_t*delta_t),0],[0,0.5*(delta_t*delta_t)],[delta_t,0],[0,delta_t]])
 
@@ -120,7 +97,7 @@ class Server:
 
         # Error Matrices
         # Disturbance Covariances (model)
-	Q = np.array([[10,0,0,0],[0,10,0,0],[0,0,10,0],[0,0,0,10]])
+	Q = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
         # Noise Covariances (Sensors)
         R = np.array([[1,0],[0,1]])
                     #[[self.gps.position_covariance[0],0],[0,self.gps.position_covariance[4]]])
@@ -145,20 +122,44 @@ class Server:
         self.imu = imu
         self.past_acceleration_x.append(self.acceleration.x)
         self.past_acceleration_y.append(self.acceleration.y)
-        self.acceleration.x = self.imu.linear_acceleration.x
-        self.acceleration.y = self.imu.linear_acceleration.y
-        self.past_imu = imu
+        self.past_heading.append(self.heading)
+
+        # Calculate Heading (Yaw orientation)
+        w = self.imu.orientation.w
+        x = self.imu.orientation.x
+        y = self.imu.orientation.y
+        z = self.imu.orientation.z      
+
+        t0 = +2.0 * (w * x + y * z)
+    	t1 = +1.0 - 2.0 * (x * x + y * y)
+        self.roll = math.atan2(t0, t1)
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        self.pitch = math.asin(t2)
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        self.yaw = math.atan2(t3, t4)
+    
+        self.heading = self.yaw
+
+	# Zero acceleration due to gravity
+        self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitch) -1.4#-1.4?
+        self.acceleration.y = self.imu.linear_acceleration.y - 9.80665*sin(self.roll)
+	print("Acceleration x is "+ str(self.acceleration.x))
+	print("Acceleration y is "+ str(self.acceleration.y))
+	# sanity check
+        #print(math.sqrt(self.imu.linear_acceleration.x*self.imu.linear_acceleration.x + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
+        #print(math.sqrt(self.imu.linear_acceleration.y*self.imu.linear_acceleration.y + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
+
+	self.past_imu = imu
 
     def mf_callback(self,mf):
         self.mf = mf
-	self.past_heading.append(self.heading)
+	#self.past_heading.append(self.heading)
 	#if self.imu is not None:  
-        #    w = self.imu.orientation.w
-        #    x = self.imu.orientation.x
-        #    y = self.imu.orientation.y
-        #    z = self.imu.orientation.z      
-	#    imu_heading = math.tan2(2*(w*z+x*y),1-2*(y*y+z*z))        
-	self.heading = math.atan2(self.mf.magnetic_field.y, self.mf.magnetic_field.x)*(180/math.pi) + self.D
+
+	#self.heading = math.atan2(self.mf.magnetic_field.y, self.mf.magnetic_field.x)*(180/math.pi) + self.D
         #print(self.heading)
         #print(imu_heading)
         self.past_mf = mf
@@ -193,12 +194,12 @@ class Server:
         
 
 	self.past_gps = gps
-        print("position is: " + str(self.position))
-	print("revised position is: " + str(self.kf_position))
+        #print("position is: " + str(self.position))
+	#print("revised position is: " + str(self.kf_position))
 
 	x0=self.past_position_x
         x1=self.past_position_y
-        print(x0,x1)
+        #print(x0,x1)
         x2=self.past_heading
 
         mx = np.cumsum(self.dx)
@@ -222,7 +223,7 @@ class Server:
             #plt.plot(self.kf_past_position_x, self.kf_past_position_y)
   
             #Basic-GPS-Position
-            plt.savefig('KF-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
+            plt.savefig('KF1-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
 
 if __name__ == '__main__':
     rospy.init_node('listener')
