@@ -148,8 +148,8 @@ class Server:
        	t1 = +1.0 - 2.0 * (x * x + y * y)
         self.rollimu = math.atan2(t0, t1)
         t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
+        #t2 = +1.0 if t2 > +1.0 else t2
+        #t2 = -1.0 if t2 < -1.0 else t2
         self.pitchimu = math.asin(t2)
         t3 = +2.0 * (w * z + x * y)
         t4 = +1.0 - 2.0 * (y * y + z * z)
@@ -159,7 +159,7 @@ class Server:
         self.headingimu = self.yawimu - self.firstheadingimu
 
 	# Zero acceleration due to gravity
-        self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu) -1.4#-1.4?
+        self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu) #-1.4?
         self.acceleration.y = self.imu.linear_acceleration.y - 9.80665*sin(self.rollimu)
         print("Acceleration x is "+ str(self.acceleration.x))
         print("Acceleration y is "+ str(self.acceleration.y))
