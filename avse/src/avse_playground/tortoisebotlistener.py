@@ -20,7 +20,7 @@ from sympy import init_printing
 from sympy.utilities.codegen import codegen
 init_printing(use_latex=True)
 
-
+#from filterpy.kalman import KalmanFilter
 
 #-----------------------------------------------------------
 
@@ -73,7 +73,7 @@ class Server:
         self.kf_past_velocity_y = []
         self.kf_past_position_x = []
         self.kf_past_position_y = []
-        self.P = np.array([[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]])
+        self.P = np.array([[0.01,0,0,0],[0,0.64,0,0],[0,0,0.01,0],[0,0,0,0.01]])
 
         self.time = 0.0
         self.dt = 0.02
@@ -98,6 +98,42 @@ class Server:
         delta_t = self.gpsdt
 	      #print(delta_t)
 
+        #https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
+        #R_std = 0.35
+        #Q_std = 0.04
+
+        #tracker = KalmanFilter(dim_x=4, dim_z=2)
+        #dt = delta_t   # time step
+
+        #tracker.F = np.array([[1, dt, 0,  0],
+        #                  [0,  1, 0,  0],
+        #                  [0,  0, 1, dt],
+        #                  [0,  0, 0,  1]])
+        #tracker.u = 0.
+        #tracker.H = np.array([[1, 0, 0, 0],
+        #                  [0, 0, 1, 0]])
+
+        #tracker.R = np.eye(2) * R_std**2
+        #q = Q_discrete_white_noise(dim=2, dt=dt, var=Q_std**2)
+        #tracker.Q = block_diag(q, q)
+        #tracker.x = np.array([[0, 0, 0, 0]]).T
+        #tracker.P = np.eye(4) * 500.
+
+        # run filter
+        #mu, cov, _, _ = tracker.batch_filter(zs)
+
+        #for x, P in zip(mu, cov):
+        # covariance of x and y
+        #cov = np.array([[P[0, 0], P[2, 0]], 
+        #            [P[0, 2], P[2, 2]]])
+        #mean = (x[0, 0], x[2, 0])
+    
+#plot results
+#zs *= .3048 # convert to meters
+#plot_filter(mu[:, 0], mu[:, 2])
+#plot_measurements(zs[:, 0], zs[:, 1])
+#plt.legend(loc=2)
+#plt.xlim(0, 20);
 	
         # Process
         xk_1 = self.x_k
@@ -117,12 +153,17 @@ class Server:
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
+        # State Prediction X = Ax + Bu
         X_k = A.dot(xk_1) + B.dot(ak_1)
+        # Covariance Prediction
         p = A.dot(self.P).dot(A.transpose()) + Q
 
         # Update Equations
+        # Kalman Gain
         K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
+        # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
         self.x_k = X_k + K.dot(zk - H.dot(X_k))
+        # Covariance Update (1-K_n)p_(n,n-1)
         self.P = (np.identity(4)-K.dot(H)).dot(p)
 
         self.kf_past_position_x.append(self.x_k[0])
@@ -159,10 +200,10 @@ class Server:
         self.headingimu = self.yawimu - self.firstheadingimu
 
 	# Zero acceleration due to gravity
-        self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu) #-1.4?
+        self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu)
         self.acceleration.y = self.imu.linear_acceleration.y - 9.80665*sin(self.rollimu)
-        print("Acceleration x is "+ str(self.acceleration.x))
-        print("Acceleration y is "+ str(self.acceleration.y))
+        #print("Acceleration x is "+ str(self.acceleration.x))
+        #print("Acceleration y is "+ str(self.acceleration.y))
 	      # sanity check
         #print(math.sqrt(self.imu.linear_acceleration.x*self.imu.linear_acceleration.x + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
         #print(math.sqrt(self.imu.linear_acceleration.y*self.imu.linear_acceleration.y + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
@@ -203,6 +244,7 @@ class Server:
 	    self.past_position_y.append(self.position.y)
             self.past_position_z.append(self.position.z)
 	    self.position = Vector3(gps.pose.pose.position.x,gps.pose.pose.position.y, gps.pose.pose.position.z)
+            self.xk = [self.position.x,self.position.y,gps.twist.twist.linear.x,gps.twist.twist.linear.y]
 
         self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
         
