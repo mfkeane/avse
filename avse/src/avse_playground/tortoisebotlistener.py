@@ -6,6 +6,7 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWithCovariance, Pose, Point, Twist
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 from nav_msgs.msg import Odometry
+from tf.transformations import euler_from_quaternion
 
 
 import utm
@@ -136,7 +137,7 @@ class Server:
 #plt.xlim(0, 20);
 	
         # Process
-        xk_1 = self.x_k
+        xk_1 = self.x_k # [pos_x, pos_y, vel_x, vel_y]
         ak_1 = np.array([[self.acceleration.x], [self.acceleration.y]])
         A = np.array([[1,0,delta_t,0],[0,1,0,delta_t],[0,0,1,0],[0,0,0,1]])
         B = np.array([[0.5*(delta_t*delta_t),0],[0,0.5*(delta_t*delta_t)],[delta_t,0],[0,delta_t]])
@@ -180,21 +181,25 @@ class Server:
         self.past_headingimu.append(self.headingimu)
 
         # Calculate Heading (Yaw orientation)
-        w = self.imu.orientation.w
-        x = self.imu.orientation.x
-        y = self.imu.orientation.y
-        z = self.imu.orientation.z      
+	euler = euler_from_quaternion(self.imu.orientation)
+	rollimu = euler[0]
+	pitchimu = euler[1]
+	yawimu = euler[2]
+        #w = self.imu.orientation.w
+        #x = self.imu.orientation.x
+        #y = self.imu.orientation.y
+        #z = self.imu.orientation.z      
 
-        t0 = +2.0 * (w * x + y * z)
-       	t1 = +1.0 - 2.0 * (x * x + y * y)
-        self.rollimu = math.atan2(t0, t1)
-        t2 = +2.0 * (w * y - z * x)
+        #t0 = +2.0 * (w * x + y * z)
+       	#t1 = +1.0 - 2.0 * (x * x + y * y)
+        #self.rollimu = math.atan2(t0, t1)
+        #t2 = +2.0 * (w * y - z * x)
         #t2 = +1.0 if t2 > +1.0 else t2
         #t2 = -1.0 if t2 < -1.0 else t2
-        self.pitchimu = math.asin(t2)
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        self.yawimu = math.atan2(t3, t4)
+        #self.pitchimu = math.asin(t2)
+        #t3 = +2.0 * (w * z + x * y)
+        #t4 = +1.0 - 2.0 * (y * y + z * z)
+        #self.yawimu = math.atan2(t3, t4)
         if self.firstimu == 1:
             self.firstheadingimu = self.yawimu
         self.headingimu = self.yawimu - self.firstheadingimu
@@ -224,7 +229,7 @@ class Server:
     def gps_callback(self, gps):
         self.gps = gps
         self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
-        if self.gpsdt>5:
+        if self.gpsdt>5: # Double check this!
 	    self.gpsdt=1.0
         self.gpstime = gps.header.stamp.to_sec()
 
@@ -251,21 +256,25 @@ class Server:
         self.past_headinggps.append(self.headingodom)
         
         # Calculate Heading (Yaw orientation)
-        w = self.gps.pose.pose.orientation.w
-        x = self.gps.pose.pose.orientation.x
-        y = self.gps.pose.pose.orientation.y
-        z = self.gps.pose.pose.orientation.z      
+        euler = euler_from_quaternion(self.imu.orientation)
+	self.rollgps = euler[0]
+	self.pitchgps = euler[1]
+	self.yawgps = euler[2]
+        #w = self.gps.pose.pose.orientation.w
+        #x = self.gps.pose.pose.orientation.x
+        #y = self.gps.pose.pose.orientation.y
+        #z = self.gps.pose.pose.orientation.z      
 
-        t0 = +2.0 * (w * x + y * z)
-       	t1 = +1.0 - 2.0 * (x * x + y * y)
-        self.rollgps = math.atan2(t0, t1)
-        t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        self.pitchgps = math.asin(t2)
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        self.yawgps = math.atan2(t3, t4)
+        #t0 = +2.0 * (w * x + y * z)
+       	#t1 = +1.0 - 2.0 * (x * x + y * y)
+        #self.rollgps = math.atan2(t0, t1)
+        #t2 = +2.0 * (w * y - z * x)
+        #t2 = +1.0 if t2 > +1.0 else t2
+        #t2 = -1.0 if t2 < -1.0 else t2
+        #self.pitchgps = math.asin(t2)
+        #t3 = +2.0 * (w * z + x * y)
+        #t4 = +1.0 - 2.0 * (y * y + z * z)
+        #self.yawgps = math.atan2(t3, t4)
         if self.firstodom == 1:
             self.firstheadingodom = self.yawgps
         self.headingodom = self.yawgps - self.firstheadingodom
