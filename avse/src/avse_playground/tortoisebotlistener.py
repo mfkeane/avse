@@ -137,17 +137,17 @@ class Server:
         self.kf_position = (self.x_k[0],self.x_k[1],0.0)
 	print("x_k: "+str(self.x_k))
 
-        odom_pub = rospy.Publisher('odometry_publisher')
-        odom_broadcaster = tf.TransformBroadcaster()
+        #odom_pub = rospy.Publisher('odometry_publisher', Odometry)
+        odom_pub = rospy.Publisher('/mur/Odom', Odometry, queue_size=10)
+        #odom_broadcaster = tf.TransformBroadcaster()
 
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = "odom"
 
-        odom.pose.pose = Pose(Point(x,y, 0.), Quaternion(0,0,0,0)
-
+        odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), Quaternion(0,0,0,0))
         odom.child_frame_id = "base_link"
-        odom.twist.twist = Twist(Vector3(vx,vy,0), Vector3(0,0,vth))
+        odom.twist.twist = Twist(Vector3(0,0,0), Vector3(0,0,0))
 
         odom_pub.publish(odom)
         #r.sleep()
@@ -291,9 +291,9 @@ class Server:
         #    plt.savefig('KF1-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
 
     
-    def talker():
-        pub = rospy.Publisher('chatter', String, queue_size=10)
-        rospy.init_node('talker', anonymous=True)
+    def talker(self):
+        #pub = rospy.Publisher('/mur/Odom', String, queue_size=10)
+        #rospy.init_node('talker', anonymous=True)
         rate = rospy.Rate(10) # 10hz
         while not rospy.is_shutdown():
             
@@ -301,7 +301,7 @@ class Server:
             rate.sleep()
 
 if __name__ == '__main__':
-    rospy.init_node('listener')
+    rospy.init_node('VehiclePose')
     
     server = Server()
 
@@ -310,7 +310,7 @@ if __name__ == '__main__':
     rospy.Subscriber("/odom", Odometry, server.gps_callback)
 
     try:
-        talker()
+        server.talker()
     except rospy.ROSInterruptException:
         pass
 
