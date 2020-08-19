@@ -6,7 +6,7 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWithCovariance, Pose, Point, Twist
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 from nav_msgs.msg import Odometry
-from tf.transformations import euler_from_quaternion
+#from tf_conversions.transformations import euler_from_quaternion
 
 
 import utm
@@ -97,44 +97,7 @@ class Server:
     def kalman(self):
         # Update time rate
         delta_t = self.gpsdt
-	      #print(delta_t)
-
-        #https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python
-        #R_std = 0.35
-        #Q_std = 0.04
-
-        #tracker = KalmanFilter(dim_x=4, dim_z=2)
-        #dt = delta_t   # time step
-
-        #tracker.F = np.array([[1, dt, 0,  0],
-        #                  [0,  1, 0,  0],
-        #                  [0,  0, 1, dt],
-        #                  [0,  0, 0,  1]])
-        #tracker.u = 0.
-        #tracker.H = np.array([[1, 0, 0, 0],
-        #                  [0, 0, 1, 0]])
-
-        #tracker.R = np.eye(2) * R_std**2
-        #q = Q_discrete_white_noise(dim=2, dt=dt, var=Q_std**2)
-        #tracker.Q = block_diag(q, q)
-        #tracker.x = np.array([[0, 0, 0, 0]]).T
-        #tracker.P = np.eye(4) * 500.
-
-        # run filter
-        #mu, cov, _, _ = tracker.batch_filter(zs)
-
-        #for x, P in zip(mu, cov):
-        # covariance of x and y
-        #cov = np.array([[P[0, 0], P[2, 0]], 
-        #            [P[0, 2], P[2, 2]]])
-        #mean = (x[0, 0], x[2, 0])
-    
-#plot results
-#zs *= .3048 # convert to meters
-#plot_filter(mu[:, 0], mu[:, 2])
-#plot_measurements(zs[:, 0], zs[:, 1])
-#plt.legend(loc=2)
-#plt.xlim(0, 20);
+        current_time = rospy.Time.now()
 	
         # Process
         xk_1 = self.x_k # [pos_x, pos_y, vel_x, vel_y]
@@ -172,6 +135,22 @@ class Server:
         self.kf_past_velocity_x.append(self.x_k[2])
         self.kf_past_velocity_y.append(self.x_k[3])
         self.kf_position = (self.x_k[0],self.x_k[1],0.0)
+	print("x_k: "+str(self.x_k))
+
+        odom_pub = rospy.Publisher('odometry_publisher')
+        odom_broadcaster = tf.TransformBroadcaster()
+
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = "odom"
+
+        odom.pose.pose = Pose(Point(x,y, 0.), Quaternion(0,0,0,0)
+
+        odom.child_frame_id = "base_link"
+        odom.twist.twist = Twist(Vector3(vx,vy,0), Vector3(0,0,vth))
+
+        odom_pub.publish(odom)
+        #r.sleep()
 
 	
     def imu_callback(self,imu):
@@ -181,25 +160,25 @@ class Server:
         self.past_headingimu.append(self.headingimu)
 
         # Calculate Heading (Yaw orientation)
-	euler = euler_from_quaternion(self.imu.orientation)
-	rollimu = euler[0]
-	pitchimu = euler[1]
-	yawimu = euler[2]
-        #w = self.imu.orientation.w
-        #x = self.imu.orientation.x
-        #y = self.imu.orientation.y
-        #z = self.imu.orientation.z      
+	#euler = euler_from_quaternion(self.imu.orientation)
+	#rollimu = euler[0]
+	#pitchimu = euler[1]
+	#yawimu = euler[2]
+        w = self.imu.orientation.w
+        x = self.imu.orientation.x
+        y = self.imu.orientation.y
+        z = self.imu.orientation.z      
 
-        #t0 = +2.0 * (w * x + y * z)
-       	#t1 = +1.0 - 2.0 * (x * x + y * y)
-        #self.rollimu = math.atan2(t0, t1)
-        #t2 = +2.0 * (w * y - z * x)
-        #t2 = +1.0 if t2 > +1.0 else t2
-        #t2 = -1.0 if t2 < -1.0 else t2
-        #self.pitchimu = math.asin(t2)
-        #t3 = +2.0 * (w * z + x * y)
-        #t4 = +1.0 - 2.0 * (y * y + z * z)
-        #self.yawimu = math.atan2(t3, t4)
+        t0 = +2.0 * (w * x + y * z)
+       	t1 = +1.0 - 2.0 * (x * x + y * y)
+        self.rollimu = math.atan2(t0, t1)
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        self.pitchimu = math.asin(t2)
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        self.yawimu = math.atan2(t3, t4)
         if self.firstimu == 1:
             self.firstheadingimu = self.yawimu
         self.headingimu = self.yawimu - self.firstheadingimu
@@ -216,15 +195,15 @@ class Server:
       	self.past_imu = imu
         self.firstimu = 0
 
-    def mf_callback(self,mf):
-        self.mf = mf
+    #def mf_callback(self,mf):
+        #self.mf = mf
 	#self.past_heading.append(self.heading)
 	#if self.imu is not None:  
 
 	#self.heading = math.atan2(self.mf.magnetic_field.y, self.mf.magnetic_field.x)*(180/math.pi) + self.D
         #print(self.heading)
         #print(imu_heading)
-        self.past_mf = mf
+        #self.past_mf = mf
 
     def gps_callback(self, gps):
         self.gps = gps
@@ -245,73 +224,81 @@ class Server:
             self.dx.append(0)
 	    self.dy.append(0)
        
-	    self.past_position_x.append(self.position.x)
-	    self.past_position_y.append(self.position.y)
-            self.past_position_z.append(self.position.z)
-	    self.position = Vector3(gps.pose.pose.position.x,gps.pose.pose.position.y, gps.pose.pose.position.z)
-            self.xk = [self.position.x,self.position.y,gps.twist.twist.linear.x,gps.twist.twist.linear.y]
+	self.past_position_x.append(self.position.x)
+	self.past_position_y.append(self.position.y)
+        self.past_position_z.append(self.position.z)
+	self.position = Vector3(gps.pose.pose.position.x,gps.pose.pose.position.y, gps.pose.pose.position.z)
+        self.xk = [self.position.x,self.position.y,gps.twist.twist.linear.x,gps.twist.twist.linear.y]
 
         self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
         
         self.past_headinggps.append(self.headingodom)
         
         # Calculate Heading (Yaw orientation)
-        euler = euler_from_quaternion(self.imu.orientation)
-	self.rollgps = euler[0]
-	self.pitchgps = euler[1]
-	self.yawgps = euler[2]
-        #w = self.gps.pose.pose.orientation.w
-        #x = self.gps.pose.pose.orientation.x
-        #y = self.gps.pose.pose.orientation.y
-        #z = self.gps.pose.pose.orientation.z      
+        #euler = euler_from_quaternion(self.imu.orientation)
+	#self.rollgps = euler[0]
+	#self.pitchgps = euler[1]
+	#self.yawgps = euler[2]
+        w = self.gps.pose.pose.orientation.w
+        x = self.gps.pose.pose.orientation.x
+        y = self.gps.pose.pose.orientation.y
+        z = self.gps.pose.pose.orientation.z      
 
-        #t0 = +2.0 * (w * x + y * z)
-       	#t1 = +1.0 - 2.0 * (x * x + y * y)
-        #self.rollgps = math.atan2(t0, t1)
-        #t2 = +2.0 * (w * y - z * x)
-        #t2 = +1.0 if t2 > +1.0 else t2
-        #t2 = -1.0 if t2 < -1.0 else t2
-        #self.pitchgps = math.asin(t2)
-        #t3 = +2.0 * (w * z + x * y)
-        #t4 = +1.0 - 2.0 * (y * y + z * z)
-        #self.yawgps = math.atan2(t3, t4)
+        t0 = +2.0 * (w * x + y * z)
+       	t1 = +1.0 - 2.0 * (x * x + y * y)
+        self.rollgps = math.atan2(t0, t1)
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        self.pitchgps = math.asin(t2)
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        self.yawgps = math.atan2(t3, t4)
         if self.firstodom == 1:
             self.firstheadingodom = self.yawgps
         self.headingodom = self.yawgps - self.firstheadingodom
-        
-        self.kalman()
     
         self.past_gps = gps
         #print("position is: " + str(self.position))
 	      #print("revised position is: " + str(self.kf_position))
 
-      	x0=self.past_position_x
-        x1=self.past_position_y
+      	#x0=self.past_position_x
+        #x1=self.past_position_y
         #print(x0,x1)
-        x2=self.past_headinggps
+        #x2=self.past_headinggps
 
-        mx = np.cumsum(self.dx)
-	my = np.cumsum(self.dy)
+        #mx = np.cumsum(self.dx)
+	#my = np.cumsum(self.dy)
 
         # Start/Goal
-	if len(x0)==1:
-            fig = plt.figure(figsize=(16,9))
+	#if len(x0)==1:
+        #    fig = plt.figure(figsize=(16,9))
         
-            plt.xlabel('X [m]')
-            plt.ylabel('Y [m]')
-            plt.title('Position')
+        #    plt.xlabel('X [m]')
+        #    plt.ylabel('Y [m]')
+        #    plt.title('Position')
            
-      	if len(x0)>0:
-            plt.plot(x0[-1],x1[-1],'*')
-            plt.plot(self.kf_past_position_x, self.kf_past_position_y)
-            plt.axis('equal')
-            plt.draw()
-            plt.pause(0.000000001)
+      	#if len(x0)>0:
+        #    plt.plot(x0[-1],x1[-1],'*')
+        #    plt.plot(self.kf_past_position_x, self.kf_past_position_y)
+        #    plt.axis('equal')
+        #    plt.draw()
+        #    plt.pause(0.000000001)
             #plt.plot(x0,x1)
             #plt.plot(self.kf_past_position_x, self.kf_past_position_y)
   
             #Basic-GPS-Position
-            plt.savefig('KF1-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
+        #    plt.savefig('KF1-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
+
+    
+    def talker():
+        pub = rospy.Publisher('chatter', String, queue_size=10)
+        rospy.init_node('talker', anonymous=True)
+        rate = rospy.Rate(10) # 10hz
+        while not rospy.is_shutdown():
+            
+            self.kalman()
+            rate.sleep()
 
 if __name__ == '__main__':
     rospy.init_node('listener')
@@ -322,9 +309,14 @@ if __name__ == '__main__':
     #rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
     rospy.Subscriber("/odom", Odometry, server.gps_callback)
 
+    try:
+        talker()
+    except rospy.ROSInterruptException:
+        pass
+
     #server.telemetry_plot()
-    plt.ion
-    plt.show()
+    #plt.ion
+    #plt.show()
     
     rospy.spin()
     
