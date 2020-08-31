@@ -2,12 +2,10 @@
 import rospy
 import message_filters
 import math
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWithCovariance, Pose, Point, Twist
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 from nav_msgs.msg import Odometry
-#from tf_conversions.transformations import euler_from_quaternion
-
 
 import utm
 
@@ -40,6 +38,8 @@ class Server:
         self.firstimu = 1
         self.headingimu = 0.0
         self.firstheadingimu = 0.0
+        self.angular_velocity = 0.0
+
 	self.firstodom = 1
         self.headingodom = 0.0
         self.firstheadingodom = 0.0
@@ -66,6 +66,9 @@ class Server:
         self.dy = []
 	
         self.x_k = np.array([[0],[0],[0],[0]])
+
+        self.acc_k = np.array([[0],[0]])
+
         #self.Pk = np.array([[0,0],[0,0]])
 	      #self.x_next = np.array([[0,0],[0,0]])
         #self.P_next = np.array([[0,0],[0,0]])
@@ -76,6 +79,9 @@ class Server:
         self.kf_past_position_y = []
         self.P = np.array([[0.01,0,0,0],[0,0.64,0,0],[0,0,0.01,0],[0,0,0,0.01]])
 
+        self.accP = np.array([[0.01,0],[0,0.1]])
+
+        self.start_time = 0.0
         self.time = 0.0
         self.dt = 0.02
         self.gpsdt = 0.0
@@ -94,11 +100,22 @@ class Server:
         #self.velocity_time = None
         #self.position_time = None
 
+    def quaternion_from_euler(self, yaw, pitch, roll):
+        qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+        qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
+        qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
+        qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
+        return Quaternion(x=qx, y=qy, z=qz, w=qw)
+
     def kalman(self):
         # Update time rate
         delta_t = self.gpsdt
         current_time = rospy.Time.now()
+
+        if self.x_k[3] == 0.:
+            self.start_time = current_time
 	
+        # POSITION AND VELOCITY
         # Process
         xk_1 = self.x_k # [pos_x, pos_y, vel_x, vel_y]
         ak_1 = np.array([[self.acceleration.x], [self.acceleration.y]])
@@ -135,7 +152,50 @@ class Server:
         self.kf_past_velocity_x.append(self.x_k[2])
         self.kf_past_velocity_y.append(self.x_k[3])
         self.kf_position = (self.x_k[0],self.x_k[1],0.0)
-	print("x_k: "+str(self.x_k))
+	#print("x_k: "+str(self.x_k))
+
+        #ORIENTATION
+        # need to do kalm filter on gyro for this
+        # Process
+        acck_1 = self.acc_k # [theta, bias]
+        qk_1 = np.array([self.angular_velocity])
+        Aacc = np.array([[1,-delta_t],[0,1]])
+        Bacc = np.array([[delta_t],[0]])
+
+        # Measurements
+        zk = np.array([[self.headingimu], [0]])
+        H = np.array([[1,0],[0,0]])
+
+        # Error Matrices
+        # Disturbance Covariances (model)
+        Q = np.array([[np.power(delta_t,2)*1,0],[0,1]])
+        # Noise Covariances (Sensors)
+        R = np.array([[1,0],[0,1]])
+                    #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
+
+        # Prediction Equations
+        # State Prediction X = Ax + Bu
+        X_k = Aacc.dot(acck_1) + Bacc.dot(qk_1)
+        # Covariance Prediction
+        p = Aacc.dot(self.accP).dot(Aacc.transpose()) + Q
+
+        # Update Equations
+        # Kalman Gain
+        K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
+        # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
+        self.acc_k = X_k + K.dot(zk - H.dot(X_k))
+        # Covariance Update (1-K_n)p_(n,n-1)
+        self.accP = (np.identity(2)-K.dot(H)).dot(p)
+
+        # 30 seconds of calibration before vehicle starts
+        calibration_bool_pub = rospy.Publisher('/mur/CalibratingGPS', Bool, queue_size=10)
+        calibration = Bool()
+        if (current_time.to_sec() - self.start_time.to_sec()) < 30.0:
+            calibration.data = True
+        else:
+            calibration.data = False
+        calibration_bool_pub.publish(calibration)
+        print((current_time.to_sec() - self.start_time.to_sec()))
 
         #odom_pub = rospy.Publisher('odometry_publisher', Odometry)
         odom_pub = rospy.Publisher('/mur/Odom', Odometry, queue_size=10)
@@ -144,16 +204,36 @@ class Server:
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = "odom"
-
-        odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), Quaternion(0,0,0,0))
+        #print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
+        if self.x_k[3] == 0.:
+	    odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0.,0.,0.))
+        else:
+            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.acc_k[0][0]))
         odom.child_frame_id = "base_link"
-        odom.twist.twist = Twist(Vector3(0,0,0), Vector3(0,0,0))
+        odom.twist.twist = Twist(Vector3(np.sqrt(np.power(self.x_k[2].astype(float),2)+np.power(self.x_k[3].astype(float),2)),0.,0.), Vector3(0.,0.,0.))
 
         odom_pub.publish(odom)
-        #r.sleep()
+
+	# Publish Raw IMU for Path Following Control
+
+
+        if self.imu is not None:
+            imu_pub = rospy.Publisher('/mur/Imu/filtered', Imu, queue_size=10)
+
+            imu_msg = self.imu
+            imu_msg.header.stamp = current_time
+            imu_msg.header.frame_id = "imu"
+            if self.x_k[3] == 0.:
+	        imu_msg.orientation = self.quaternion_from_euler(0.,0.,0.)
+            else:
+	        imu_msg.orientation = self.quaternion_from_euler(0,0,self.acc_k[0][0])
+            imu_pub.publish(imu_msg)
+            #r.sleep()
 
 	
     def imu_callback(self,imu):
+
+        # Initialise
         self.imu = imu
         self.past_acceleration_x.append(self.acceleration.x)
         self.past_acceleration_y.append(self.acceleration.y)
@@ -191,7 +271,8 @@ class Server:
 	      # sanity check
         #print(math.sqrt(self.imu.linear_acceleration.x*self.imu.linear_acceleration.x + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
         #print(math.sqrt(self.imu.linear_acceleration.y*self.imu.linear_acceleration.y + self.imu.linear_acceleration.z*self.imu.linear_acceleration.z))
-
+        
+        self.angular_velocity = imu.angular_velocity.z
       	self.past_imu = imu
         self.firstimu = 0
 
