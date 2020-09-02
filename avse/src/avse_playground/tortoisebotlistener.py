@@ -100,7 +100,7 @@ class Server:
         #self.velocity_time = None
         #self.position_time = None
 
-    def quaternion_from_euler(self, yaw, pitch, roll):
+    def quaternion_from_euler(self, roll, pitch, yaw):
         qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
         qy = np.cos(roll/2) * np.sin(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.cos(pitch/2) * np.sin(yaw/2)
         qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
@@ -195,7 +195,7 @@ class Server:
         else:
             calibration.data = False
         calibration_bool_pub.publish(calibration)
-        print((current_time.to_sec() - self.start_time.to_sec()))
+        #print((current_time.to_sec() - self.start_time.to_sec()))
 
         #odom_pub = rospy.Publisher('odometry_publisher', Odometry)
         odom_pub = rospy.Publisher('/mur/Odom', Odometry, queue_size=10)
@@ -210,7 +210,7 @@ class Server:
         else:
             odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.acc_k[0][0]))
         odom.child_frame_id = "base_link"
-        odom.twist.twist = Twist(Vector3(np.sqrt(np.power(self.x_k[2].astype(float),2)+np.power(self.x_k[3].astype(float),2)),0.,0.), Vector3(0.,0.,0.))
+        odom.twist.twist = Twist(Vector3(self.x_k[2],self.x_k[3],0.), Vector3(0.,0.,0.))
 
         odom_pub.publish(odom)
 
