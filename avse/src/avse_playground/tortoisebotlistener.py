@@ -128,9 +128,9 @@ class Server:
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+        Q = np.array([[1,0,0,0],[0,1,0,0],[0,0,2,0],[0,0,0,2]])
         # Noise Covariances (Sensors)
-        R = np.array([[1,0],[0,1]])
+        R = np.array([[2,0],[0,2]])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -163,14 +163,14 @@ class Server:
         Bacc = np.array([[delta_t],[0]])
 
         # Measurements
-        zk = np.array([[self.headingimu], [0]])
-        H = np.array([[1,0],[0,0]])
+        zk = np.array([[self.headingimu],[self.headingodom]])
+        H = np.array([[1,0],[1,0]])
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[np.power(delta_t,2)*1,0],[0,1]])
+        Q = np.array([[np.power(delta_t,2)*1,0],[0,5]])
         # Noise Covariances (Sensors)
-        R = np.array([[1,0],[0,1]])
+        R = np.array([[5,0],[0,5]])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -184,6 +184,7 @@ class Server:
         K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
         # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
         self.acc_k = X_k + K.dot(zk - H.dot(X_k))
+        print(self.acc_k)
         # Covariance Update (1-K_n)p_(n,n-1)
         self.accP = (np.identity(2)-K.dot(H)).dot(p)
 
