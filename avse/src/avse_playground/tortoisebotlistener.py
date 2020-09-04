@@ -87,6 +87,8 @@ class Server:
         self.dt = 0.02
         self.gpsdt = 0.0
         self.gpstime = 0.0
+        self.imudt = 0.0
+        self.imutime = 0.0
         self.distance = 0.0
 
         self.pitchimu = 0.0;
@@ -160,8 +162,8 @@ class Server:
         # Process
         acck_1 = self.acc_k # [theta; bias; thetagps;biasgps]
         qk_1 = np.array([[self.angular_velocity],[self.angular_velocity_gps]])
-        Aacc = np.array([[1,-delta_t,0,0],[0,1,0,0],[0,0,1,-delta_t],[0,0,0,1]])
-        Bacc = np.array([[delta_t,0],[0,delta_t],[0,0],[0,0]])
+        Aacc = np.array([[1,-self.imudt,0,0],[0,1,0,0],[0,0,1,-delta_t],[0,0,0,1]])
+        Bacc = np.array([[self.imudt,0],[0,delta_t],[0,0],[0,0]])
 
         # Measurements
         zk = np.array([[self.headingimu], [self.headingodom]])
@@ -169,7 +171,7 @@ class Server:
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[np.power(delta_t,2)*1,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
+        Q = np.array([[np.power(self.imudt,2)*1,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
         # Noise Covariances (Sensors)
         R = np.array([[1,0],[0,1]])#np.array([1])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
@@ -210,7 +212,7 @@ class Server:
         if self.x_k[3] == 0.:
 	    odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0.,0.,0.))
         else:
-            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.acc_k[0][0]))
+            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.acc_k[0]))#+self.acc_k[0]-self.acc_k[2]))
         odom.child_frame_id = "base_link"
         odom.twist.twist = Twist(Vector3(self.x_k[2],self.x_k[3],0.), Vector3(0.,0.,0.))
 
@@ -228,7 +230,7 @@ class Server:
             if self.x_k[3] == 0.:
 	        imu_msg.orientation = self.quaternion_from_euler(0.,0.,0.)
             else:
-	        imu_msg.orientation = self.quaternion_from_euler(0,0,self.acc_k[0][0])
+	        imu_msg.orientation = self.quaternion_from_euler(0,0,self.acc_k[0])
             imu_pub.publish(imu_msg)
             #r.sleep()
 
@@ -240,6 +242,11 @@ class Server:
         self.past_acceleration_x.append(self.acceleration.x)
         self.past_acceleration_y.append(self.acceleration.y)
         self.past_headingimu.append(self.headingimu)
+
+        self.imudt = imu.header.stamp.to_sec() - self.imutime
+        if self.imudt>1: # Double check this!
+	    self.gpsdt=0.02
+        self.imutime = imu.header.stamp.to_sec()
 
         # Calculate Heading (Yaw orientation)
 	#euler = euler_from_quaternion(self.imu.orientation)
