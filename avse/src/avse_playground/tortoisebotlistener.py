@@ -43,6 +43,7 @@ class Server:
 	self.firstodom = 1
         self.headingodom = 0.0
         self.firstheadingodom = 0.0
+        self.angular_velocity_gps = 0.0
         
         self.velocity = Vector3(x=0.0,y=0.0,z=0.0)
         self.k_velocity = Vector3(x=0.0,y=0.0,z=0.0)
@@ -67,7 +68,7 @@ class Server:
 	
         self.x_k = np.array([[0],[0],[0],[0]])
 
-        self.acc_k = np.array([[0],[0]])
+        self.acc_k = np.array([[0],[0],[0],[0]])
 
         #self.Pk = np.array([[0,0],[0,0]])
 	      #self.x_next = np.array([[0,0],[0,0]])
@@ -79,7 +80,7 @@ class Server:
         self.kf_past_position_y = []
         self.P = np.array([[0.01,0,0,0],[0,0.64,0,0],[0,0,0.01,0],[0,0,0,0.01]])
 
-        self.accP = np.array([[0.01,0],[0,0.1]])
+        self.accP = np.array([[0.01,0,0,0],[0,0.1,0,0],[0,0,0.01,0],[0,0,0,0.1]])
 
         self.start_time = 0.0
         self.time = 0.0
@@ -138,7 +139,7 @@ class Server:
         X_k = A.dot(xk_1) + B.dot(ak_1)
         # Covariance Prediction
         p = A.dot(self.P).dot(A.transpose()) + Q
-
+	
         # Update Equations
         # Kalman Gain
         K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
@@ -146,7 +147,7 @@ class Server:
         self.x_k = X_k + K.dot(zk - H.dot(X_k))
         # Covariance Update (1-K_n)p_(n,n-1)
         self.P = (np.identity(4)-K.dot(H)).dot(p)
-
+	#print(self.x_k)
         self.kf_past_position_x.append(self.x_k[0])
         self.kf_past_position_y.append(self.x_k[1])
         self.kf_past_velocity_x.append(self.x_k[2])
@@ -157,20 +158,20 @@ class Server:
         #ORIENTATION
         # need to do kalm filter on gyro for this
         # Process
-        acck_1 = self.acc_k # [theta, bias]
-        qk_1 = np.array([self.angular_velocity])
-        Aacc = np.array([[1,-delta_t],[0,1]])
-        Bacc = np.array([[delta_t],[0]])
+        acck_1 = self.acc_k # [theta; bias; thetagps;biasgps]
+        qk_1 = np.array([[self.angular_velocity],[self.angular_velocity_gps]])
+        Aacc = np.array([[1,-delta_t,0,0],[0,1,0,0],[0,0,1,-delta_t],[0,0,0,1]])
+        Bacc = np.array([[delta_t,0],[0,delta_t],[0,0],[0,0]])
 
         # Measurements
-        zk = np.array([[self.headingimu],[self.headingodom]])
-        H = np.array([[1,0],[1,0]])
+        zk = np.array([[self.headingimu], [self.headingodom]])
+        H = np.array([[1,0,0,0],[0,0,1,0]])
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[np.power(delta_t,2)*1,0],[0,5]])
+        Q = np.array([[np.power(delta_t,2)*1,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
         # Noise Covariances (Sensors)
-        R = np.array([[5,0],[0,5]])
+        R = np.array([[1,0],[0,1]])#np.array([1])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -181,7 +182,7 @@ class Server:
 
         # Update Equations
         # Kalman Gain
-        K = p.dot(H.transpose()).dot(np.linalg.inv(H.dot(p).dot(H.transpose())+R))
+        K = p.dot(H.transpose()).dot(np.linalg.pinv(H.dot(p).dot(H.transpose())+R))
         # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
         self.acc_k = X_k + K.dot(zk - H.dot(X_k))
         print(self.acc_k)
@@ -339,7 +340,7 @@ class Server:
         if self.firstodom == 1:
             self.firstheadingodom = self.yawgps
         self.headingodom = self.yawgps - self.firstheadingodom
-    
+    	self.angular_velocity_gps = self.gps.twist.twist.angular.z
         self.past_gps = gps
         #print("position is: " + str(self.position))
 	      #print("revised position is: " + str(self.kf_position))
