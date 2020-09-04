@@ -187,7 +187,7 @@ class Server:
         self.acc_k = X_k + K.dot(zk - H.dot(X_k))
         print(self.acc_k)
         # Covariance Update (1-K_n)p_(n,n-1)
-        self.accP = (np.identity(2)-K.dot(H)).dot(p)
+        self.accP = (np.identity(4)-K.dot(H)).dot(p)
 
         # 30 seconds of calibration before vehicle starts
         calibration_bool_pub = rospy.Publisher('/mur/CalibratingGPS', Bool, queue_size=10)
