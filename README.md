@@ -73,7 +73,10 @@ rosrun avse tortoisebotlistener.py
 ```sh
 rosrun teleop_twist_keyboard teleop_twist_keyboard.py
 ```
-8. In RViz, add the `RobotModel` display and the two odometry messages, `/odom` and `/mur/Odom`. The first is the raw noisy readings from the GPS, and the second is the filtered data from the GPS and IMU. Change the colour of these to differientate them. Set fixed frame to `odom` and uncheck any covariances. You may wish to reduce the tolerances and keep variables for clarity.
+8. In RViz, add the `RobotModel` display and the two odometry messages, `/odom` and `/mur/Odom`. The first is the raw noisy readings from the GPS, and the second is the filtered data from the GPS and IMU. Change the colour of these to differientate them. Set fixed frame to `odom` and uncheck any covariances. You may wish to set to TopDownOrtho view and reduce the tolerances and keep variables for clarity.
+
+Once finished, you should end up with something like this\
+![demo](assets/demo.gif)
 
 ## Folder Structures
 
