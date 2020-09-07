@@ -179,7 +179,7 @@ class Server:
 
         # Prediction Equations
         # State Prediction X = Ax + Bu
-        X_k = Aacc.dot(acck_1) + Bacc.dot(qk_1)
+        X_k = self.pi_2_pi(Aacc.dot(acck_1) + Bacc.dot(qk_1))
         # Covariance Prediction
         p = Aacc.dot(self.accP).dot(Aacc.transpose()) + Q
 
@@ -187,7 +187,7 @@ class Server:
         # Kalman Gain
         K = p.dot(H.transpose()).dot(np.linalg.pinv(H.dot(p).dot(H.transpose())+R))
         # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
-        self.acc_k = X_k + K.dot(zk - H.dot(X_k))
+        self.acc_k = X_k + K.dot(self.pi_2_pi(zk - H.dot(X_k)))
         self.acc_k[0]=self.pi_2_pi(self.acc_k[0])
         self.acc_k[2]=self.pi_2_pi(self.acc_k[2])
         #print(self.acc_k)
