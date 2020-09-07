@@ -109,7 +109,8 @@ class Server:
         qz = np.cos(roll/2) * np.cos(pitch/2) * np.sin(yaw/2) - np.sin(roll/2) * np.sin(pitch/2) * np.cos(yaw/2)
         qw = np.cos(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) + np.sin(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
         return Quaternion(x=qx, y=qy, z=qz, w=qw)
-
+    def pi_2_pi(self, angle):
+        return (angle + np.pi)%(2*np.pi)-np.pi
     def kalman(self):
         # Update time rate
         delta_t = self.gpsdt
@@ -166,7 +167,7 @@ class Server:
         Bacc = np.array([[self.imudt,0],[0,delta_t],[0,0],[0,0]])
 
         # Measurements
-        zk = np.array([[self.headingimu], [self.headingodom]])
+        zk = np.array([[self.pi_2_pi(self.yawimu)], [self.pi_2_pi(self.yawgps)]])
         H = np.array([[1,0,0,0],[0,0,1,0]])
 
         # Error Matrices
@@ -187,7 +188,9 @@ class Server:
         K = p.dot(H.transpose()).dot(np.linalg.pinv(H.dot(p).dot(H.transpose())+R))
         # State Update x_(n,n-1) + K_n*(z_n - x_(n,n-1))
         self.acc_k = X_k + K.dot(zk - H.dot(X_k))
-        print(self.acc_k)
+        self.acc_k[0]=self.pi_2_pi(self.acc_k[0])
+        self.acc_k[2]=self.pi_2_pi(self.acc_k[2])
+        #print(self.acc_k)
         # Covariance Update (1-K_n)p_(n,n-1)
         self.accP = (np.identity(4)-K.dot(H)).dot(p)
 
@@ -212,10 +215,10 @@ class Server:
         if self.x_k[3] == 0.:
 	    odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0.,0.,0.))
         else:
-            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.acc_k[0]))#+self.acc_k[0]-self.acc_k[2]))
+            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0])))#+self.acc_k[0]-self.acc_k[2]))
         odom.child_frame_id = "base_link"
         odom.twist.twist = Twist(Vector3(self.x_k[2],self.x_k[3],0.), Vector3(0.,0.,0.))
-
+	#print(self.acc_k[0])
         odom_pub.publish(odom)
 
 	# Publish Raw IMU for Path Following Control
@@ -230,7 +233,8 @@ class Server:
             if self.x_k[3] == 0.:
 	        imu_msg.orientation = self.quaternion_from_euler(0.,0.,0.)
             else:
-	        imu_msg.orientation = self.quaternion_from_euler(0,0,self.acc_k[0])
+	        imu_msg.orientation = self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0]))
+                imu_msg.linear_acceleration = Vector3(self.acceleration.x,self.acceleration.y,0.0)
             imu_pub.publish(imu_msg)
             #r.sleep()
 
@@ -271,6 +275,8 @@ class Server:
         if self.firstimu == 1:
             self.firstheadingimu = self.yawimu
         self.headingimu = self.yawimu - self.firstheadingimu
+        self.yawimu = self.pi_2_pi(self.yawimu)
+        self.headingimu = self.pi_2_pi(self.headingimu)   
 
 	# Zero acceleration due to gravity
         self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu)
@@ -347,6 +353,8 @@ class Server:
         if self.firstodom == 1:
             self.firstheadingodom = self.yawgps
         self.headingodom = self.yawgps - self.firstheadingodom
+        self.yawgps = self.pi_2_pi(self.yawgps)
+        self.headingodom = self.pi_2_pi(self.headingodom)
     	self.angular_velocity_gps = self.gps.twist.twist.angular.z
         self.past_gps = gps
         #print("position is: " + str(self.position))
