@@ -174,7 +174,7 @@ class Server:
         # Disturbance Covariances (model)
         Q = np.array([[np.power(self.imudt,2)*1,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
         # Noise Covariances (Sensors)
-        R = np.array([[1,0],[0,1]])#np.array([1])
+        R = np.array([[0.001,0],[0,0.02]])#np.array([1])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -215,7 +215,7 @@ class Server:
         if self.x_k[3] == 0.:
 	    odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0.,0.,0.))
         else:
-            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0])))#+self.acc_k[0]-self.acc_k[2]))
+            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0]+self.acc_k[0]-self.acc_k[2])))
         odom.child_frame_id = "base_link"
         odom.twist.twist = Twist(Vector3(self.x_k[2],self.x_k[3],0.), Vector3(0.,0.,0.))
 	#print(self.acc_k[0])
