@@ -3,7 +3,7 @@ import rospy
 import message_filters
 import math
 from std_msgs.msg import String, Bool
-from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWithCovariance, Pose, Point, Twist
+from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWithCovariance, Pose, Point, Twist, Vector3Stamped
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 from nav_msgs.msg import Odometry
 
@@ -28,6 +28,7 @@ class Server:
         self.gps = None
         self.imu = None
         self.mf = None
+        self.gps_velocity = None
 
         self.past_gps = None
         self.past_imu = None
@@ -51,6 +52,8 @@ class Server:
         self.k_position = Vector3(x=0.0,y=0.0,z=0.0)
         self.acceleration = Vector3(x=0.0,y=0.0,z=0.0)
 
+	self.firstgps = 0
+	self.firstposition = [0,0]
         self.past_headingimu = []
         self.past_headinggps = []
         self.past_acceleration_x = []
@@ -63,8 +66,8 @@ class Server:
         self.past_position_y = []
         self.past_position_z = []
 	
-        self.dx = []
-        self.dy = []
+        self.dx = 0
+        self.dy = 0
 	
         self.x_k = np.array([[0],[0],[0],[0]])
 
@@ -127,14 +130,14 @@ class Server:
         B = np.array([[0.5*(delta_t*delta_t),0],[0,0.5*(delta_t*delta_t)],[delta_t,0],[0,delta_t]])
 
         # Measurements
-        zk = np.array([[self.position.x], [self.position.y]])
-        H = np.array([[1,0,0,0],[0,1,0,0]])
+        zk = np.array([[self.position.x], [self.position.y], [self.velocity.x],[self.velocity.y]])
+        H = np.array([[1,0,delta_t,0],[0,1,0,delta_t],[0,0,1,0],[0,0,0,1]])
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[1,0,0,0],[0,1,0,0],[0,0,2,0],[0,0,0,2]])
+        Q = np.array([[0.1,0,0,0],[0,0.01,0,0],[0,0,0.1,0],[0,0,0,0.01]])
         # Noise Covariances (Sensors)
-        R = np.array([[2,0],[0,2]])
+        R = np.array([[10,0,0,0],[0,10,0,0],[0,0,2,0],[0,0,0,2]])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -215,7 +218,7 @@ class Server:
         if self.x_k[3] == 0.:
 	    odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0.,0.,0.))
         else:
-            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0]+self.acc_k[0]-self.acc_k[2])))
+            odom.pose.pose = Pose(Point(self.x_k[0],self.x_k[1], 0.), self.quaternion_from_euler(0,0,self.pi_2_pi(self.acc_k[0])))#+self.acc_k[0]-self.acc_k[2])))
         odom.child_frame_id = "base_link"
         odom.twist.twist = Twist(Vector3(self.x_k[2],self.x_k[3],0.), Vector3(0.,0.,0.))
 	#print(self.acc_k[0])
@@ -300,94 +303,69 @@ class Server:
         #print(self.heading)
         #print(imu_heading)
         #self.past_mf = mf
+    def gps_velocity_callback(self, gps_velocity):
+        self.gps_velocity = gps_velocity
+        self.velocity = gps_velocity.vector
 
     def gps_callback(self, gps):
+        current_time = rospy.Time.now()
         self.gps = gps
         self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
         if self.gpsdt>5: # Double check this!
 	    self.gpsdt=1.0
         self.gpstime = gps.header.stamp.to_sec()
-
         if self.past_gps is not None:
-            present = [gps.pose.pose.position.x, gps.pose.pose.position.y]#utm.from_latlon(gps.latitude,gps.longitude)
-            past = [self.past_gps.pose.pose.position.x, self.past_gps.pose.pose.position.y]#utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
-            dx2 = present[0]-past[0]
-            dy2 = present[1]-past[1]
-            self.dx.append(dx2)
-            self.dy.append(dy2)
+            if self.firstgps == 0:
+		self.firstposition = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
+            self.firstgps=1
+            present = utm.from_latlon(gps.latitude,gps.longitude)
+            past = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
+            self.dx = present[0]-past[0]
+            self.dy = present[1]-past[1]
 
         else:
-            self.dx.append(0)
-	    self.dy.append(0)
+            self.firstgps = 0
+            present = [0,0]
+            past = [0,0]
+            self.dx=0
+	    self.dy=0
        
-	self.past_position_x.append(self.position.x)
-	self.past_position_y.append(self.position.y)
-        self.past_position_z.append(self.position.z)
-	self.position = Vector3(gps.pose.pose.position.x,gps.pose.pose.position.y, gps.pose.pose.position.z)
-        self.xk = [self.position.x,self.position.y,gps.twist.twist.linear.x,gps.twist.twist.linear.y]
+	self.position = Vector3(present[0]-self.firstposition[0],present[1]-self.firstposition[1],0.0)
+        self.xk = [self.position.x,self.position.y,self.velocity.x, self.velocity.y]
 
-        self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
+        #self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
         
-        self.past_headinggps.append(self.headingodom)
         
         # Calculate Heading (Yaw orientation)
-        #euler = euler_from_quaternion(self.imu.orientation)
-	#self.rollgps = euler[0]
-	#self.pitchgps = euler[1]
-	#self.yawgps = euler[2]
-        w = self.gps.pose.pose.orientation.w
-        x = self.gps.pose.pose.orientation.x
-        y = self.gps.pose.pose.orientation.y
-        z = self.gps.pose.pose.orientation.z      
-
-        t0 = +2.0 * (w * x + y * z)
-       	t1 = +1.0 - 2.0 * (x * x + y * y)
-        self.rollgps = math.atan2(t0, t1)
-        t2 = +2.0 * (w * y - z * x)
-        t2 = +1.0 if t2 > +1.0 else t2
-        t2 = -1.0 if t2 < -1.0 else t2
-        self.pitchgps = math.asin(t2)
-        t3 = +2.0 * (w * z + x * y)
-        t4 = +1.0 - 2.0 * (y * y + z * z)
-        self.yawgps = math.atan2(t3, t4)
-        if self.firstodom == 1:
-            self.firstheadingodom = self.yawgps
-        self.headingodom = self.yawgps - self.firstheadingodom
+        self.yawgps = np.arctan2(self.position.y-self.dy, self.position.x-self.dx)
+        #if self.firstodom == 1:
+        #    self.firstheadingodom = self.yawgps
+        #self.headingodom = self.yawgps - self.firstheadingodom
         self.yawgps = self.pi_2_pi(self.yawgps)
         self.headingodom = self.pi_2_pi(self.headingodom)
-    	self.angular_velocity_gps = self.gps.twist.twist.angular.z
+    	#self.angular_velocity_gps = self.gps.twist.twist.angular.z
         self.past_gps = gps
-        #print("position is: " + str(self.position))
-	      #print("revised position is: " + str(self.kf_position))
+       
+        self.past_position_x.append(self.position.x)
+	self.past_position_y.append(self.position.y)
+        self.past_position_z.append(self.position.z)
 
-      	#x0=self.past_position_x
-        #x1=self.past_position_y
-        #print(x0,x1)
-        #x2=self.past_headinggps
+	odom_pub = rospy.Publisher('/fix/Odom_w_imu_orientation', Odometry, queue_size=10)
+        #odom_broadcaster = tf.TransformBroadcaster()
 
-        #mx = np.cumsum(self.dx)
-	#my = np.cumsum(self.dy)
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = "odom"
+        #print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
+	odom.pose.pose = Pose(Point(self.position.x,self.position.y, 0.0), (self.imu.orientation))
+        odom.child_frame_id = "base_link"
+        if self.gps_velocity is not None:
+            odom.twist.twist = Twist((self.gps_velocity.vector), Vector3(0.,0.,0.))
+        else:
+            odom.twist.twist = Twist(Vector3(0.,0.,0.), Vector3(0.,0.,0.))
 
-        # Start/Goal
-	#if len(x0)==1:
-        #    fig = plt.figure(figsize=(16,9))
-        
-        #    plt.xlabel('X [m]')
-        #    plt.ylabel('Y [m]')
-        #    plt.title('Position')
-           
-      	#if len(x0)>0:
-        #    plt.plot(x0[-1],x1[-1],'*')
-        #    plt.plot(self.kf_past_position_x, self.kf_past_position_y)
-        #    plt.axis('equal')
-        #    plt.draw()
-        #    plt.pause(0.000000001)
-            #plt.plot(x0,x1)
-            #plt.plot(self.kf_past_position_x, self.kf_past_position_y)
-  
-            #Basic-GPS-Position
-        #    plt.savefig('KF1-GPS-Position.png', dpi=72, transparent=True, bbox_inches='tight')
-
+	#print(self.acc_k[0])
+        odom_pub.publish(odom)
     
     def talker(self):
         #pub = rospy.Publisher('/mur/Odom', String, queue_size=10)
@@ -405,7 +383,8 @@ if __name__ == '__main__':
 
     rospy.Subscriber("/os1_cloud_node/imu", Imu, server.imu_callback)
     #rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
-    rospy.Subscriber("/odom", Odometry, server.gps_callback)
+    rospy.Subscriber("/fix", NavSatFix, server.gps_callback)
+    rospy.Subscriber("/fix_velocity", Vector3Stamped, server.gps_velocity_callback)
 
     try:
         server.talker()
