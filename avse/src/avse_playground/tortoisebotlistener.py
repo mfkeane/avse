@@ -34,6 +34,8 @@ class Server:
         self.past_imu = None
         self.past_mf = None
 
+	self.calibrated = False
+
         self.D = 11.824 # Magnetic Declination (Mornington)
 
         self.firstimu = 1
@@ -135,9 +137,9 @@ class Server:
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[0.1,0,0,0],[0,0.01,0,0],[0,0,0.1,0],[0,0,0,0.01]])
+        Q = np.array([[0.01,0,0,0],[0,0.01,0,0],[0,0,0.01,0],[0,0,0,0.01]])
         # Noise Covariances (Sensors)
-        R = np.array([[10,0,0,0],[0,10,0,0],[0,0,2,0],[0,0,0,2]])
+        R = np.array([[20,0,0,0],[0,20,0,0],[0,0,2,0],[0,0,0,2]])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -167,7 +169,7 @@ class Server:
         acck_1 = self.acc_k # [theta; bias; thetagps;biasgps]
         qk_1 = np.array([[self.angular_velocity],[self.angular_velocity_gps]])
         Aacc = np.array([[1,-self.imudt,0,0],[0,1,0,0],[0,0,1,-delta_t],[0,0,0,1]])
-        Bacc = np.array([[self.imudt,0],[0,delta_t],[0,0],[0,0]])
+        Bacc = np.array([[self.imudt,0],[0,0],[0,delta_t],[0,0]])
 
         # Measurements
         zk = np.array([[self.pi_2_pi(self.yawimu)], [self.pi_2_pi(self.yawgps)]])
@@ -175,9 +177,9 @@ class Server:
 
         # Error Matrices
         # Disturbance Covariances (model)
-        Q = np.array([[np.power(self.imudt,2)*1,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
+        Q = np.array([[np.power(self.imudt,2)*0.01,0,0,0],[0,1,0,0],[0,0,np.power(delta_t,2)*1,0],[0,0,0,1]])
         # Noise Covariances (Sensors)
-        R = np.array([[0.001,0],[0,0.02]])#np.array([1])
+        R = np.array([[0.1,0],[0,1]])#np.array([1])
                     #[[self.gps.pose.covariance[0],0],[0,self.gps.pose.covariance[4]]])
 
         # Prediction Equations
@@ -200,8 +202,9 @@ class Server:
         # 30 seconds of calibration before vehicle starts
         calibration_bool_pub = rospy.Publisher('/mur/CalibratingGPS', Bool, queue_size=10)
         calibration = Bool()
-        if (current_time.to_sec() - self.start_time.to_sec()) < 30.0:
+        if (current_time.to_sec() - self.start_time.to_sec()) > 30.0:
             calibration.data = True
+            self.calibrated = True
         else:
             calibration.data = False
         calibration_bool_pub.publish(calibration)
@@ -316,10 +319,14 @@ class Server:
         self.gpstime = gps.header.stamp.to_sec()
         if self.past_gps is not None:
             if self.firstgps == 0:
-		self.firstposition = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
-            self.firstgps=1
-            present = utm.from_latlon(gps.latitude,gps.longitude)
-            past = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
+		self.firstposition = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
+                self.firstgps=1
+            if self.calibrated is True and self.firstgps == 1:
+                self.firstposition = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
+	        self.firstgps = 2
+            
+            present = utm.from_latlon(gps.longitude,gps.latitude)
+            past = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
             self.dx = present[0]-past[0]
             self.dy = present[1]-past[1]
 
@@ -330,7 +337,7 @@ class Server:
             self.dx=0
 	    self.dy=0
        
-	self.position = Vector3(present[0]-self.firstposition[0],present[1]-self.firstposition[1],0.0)
+	self.position = Vector3(self.firstposition[0]-present[0],self.firstposition[1]-present[1],0.0)
         self.xk = [self.position.x,self.position.y,self.velocity.x, self.velocity.y]
 
         #self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
@@ -342,7 +349,7 @@ class Server:
         #    self.firstheadingodom = self.yawgps
         #self.headingodom = self.yawgps - self.firstheadingodom
         self.yawgps = self.pi_2_pi(self.yawgps)
-        self.headingodom = self.pi_2_pi(self.headingodom)
+        #self.headingodom = self.pi_2_pi(self.headingodom)
     	#self.angular_velocity_gps = self.gps.twist.twist.angular.z
         self.past_gps = gps
        
