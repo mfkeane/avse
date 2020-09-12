@@ -388,10 +388,10 @@ if __name__ == '__main__':
     
     server = Server()
 
-    rospy.Subscriber("/os1_cloud_node/imu", Imu, server.imu_callback)
+    rospy.Subscriber("/piksi/imu", Imu, server.imu_callback)
     #rospy.Subscriber("/android/magnetometer", MagneticField, server.mf_callback)
-    rospy.Subscriber("/fix", NavSatFix, server.gps_callback)
-    rospy.Subscriber("/fix_velocity", Vector3Stamped, server.gps_velocity_callback)
+    rospy.Subscriber("/piksi/gps", NavSatFix, server.gps_callback)
+    rospy.Subscriber("/piksi/velocity", Vector3Stamped, server.gps_velocity_callback)
 
     try:
         server.talker()
