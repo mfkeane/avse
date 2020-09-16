@@ -246,7 +246,7 @@ class Server:
 
 	
     def imu_callback(self,imu):
-
+        current_time = rospy.Time.now()
         # Initialise
         self.imu = imu
         self.past_acceleration_x.append(self.acceleration.x)
@@ -278,11 +278,11 @@ class Server:
         t3 = +2.0 * (w * z + x * y)
         t4 = +1.0 - 2.0 * (y * y + z * z)
         self.yawimu = math.atan2(t3, t4)
-        if self.firstimu == 1:
-            self.firstheadingimu = self.yawimu
-        self.headingimu = self.yawimu - self.firstheadingimu
+        #if self.firstimu == 1:
+        #    self.firstheadingimu = self.yawimu
+        #self.headingimu = self.yawimu - self.firstheadingimu
         self.yawimu = self.pi_2_pi(self.yawimu)
-        self.headingimu = self.pi_2_pi(self.headingimu)   
+        #self.headingimu = self.pi_2_pi(self.headingimu)   
 
 	# Zero acceleration due to gravity
         self.acceleration.x = self.imu.linear_acceleration.x - 9.80665*sin(self.pitchimu)
@@ -297,6 +297,25 @@ class Server:
       	self.past_imu = imu
         self.firstimu = 0
 
+	odom_pub = rospy.Publisher('/fix/Odom', Odometry, queue_size=10)
+        #odom_broadcaster = tf.TransformBroadcaster()
+
+        odom = Odometry()
+        odom.header.stamp = current_time
+        odom.header.frame_id = "odom"
+        #print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
+	if self.gps is not None:
+	    odom.pose.pose = Pose(Point(self.position.x,self.position.y, 0.0), (self.imu.orientation))
+        else:
+            odom.pose.pose = Pose(Point(0.0,0.0,0.0), (self.imu.orientation))
+        odom.child_frame_id = "base_link"
+        if self.gps_velocity is not None:
+            odom.twist.twist = Twist((self.gps_velocity.vector), Vector3(0.,0.,0.))
+        else:
+            odom.twist.twist = Twist(Vector3(0.,0.,0.), Vector3(0.,0.,0.))
+
+	#print(self.acc_k[0])
+        odom_pub.publish(odom)
     #def mf_callback(self,mf):
         #self.mf = mf
 	#self.past_heading.append(self.heading)
@@ -311,7 +330,7 @@ class Server:
         self.velocity = gps_velocity.vector
 
     def gps_callback(self, gps):
-        current_time = rospy.Time.now()
+        
         self.gps = gps
         self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
         if self.gpsdt>5: # Double check this!
@@ -319,14 +338,14 @@ class Server:
         self.gpstime = gps.header.stamp.to_sec()
         if self.past_gps is not None:
             if self.firstgps == 0:
-		self.firstposition = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
+		self.firstposition = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
                 self.firstgps=1
             if self.calibrated is True and self.firstgps == 1:
-                self.firstposition = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
+                self.firstposition = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
 	        self.firstgps = 2
             
-            present = utm.from_latlon(gps.longitude,gps.latitude)
-            past = utm.from_latlon(self.past_gps.longitude,self.past_gps.latitude)
+            present = utm.from_latlon(gps.latitude,gps.longitude)
+            past = utm.from_latlon(self.past_gps.latitude,self.past_gps.longitude)
             self.dx = present[0]-past[0]
             self.dy = present[1]-past[1]
 
@@ -357,22 +376,7 @@ class Server:
 	self.past_position_y.append(self.position.y)
         self.past_position_z.append(self.position.z)
 
-	odom_pub = rospy.Publisher('/fix/Odom_w_imu_orientation', Odometry, queue_size=10)
-        #odom_broadcaster = tf.TransformBroadcaster()
-
-        odom = Odometry()
-        odom.header.stamp = current_time
-        odom.header.frame_id = "odom"
-        #print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
-	odom.pose.pose = Pose(Point(self.position.x,self.position.y, 0.0), (self.imu.orientation))
-        odom.child_frame_id = "base_link"
-        if self.gps_velocity is not None:
-            odom.twist.twist = Twist((self.gps_velocity.vector), Vector3(0.,0.,0.))
-        else:
-            odom.twist.twist = Twist(Vector3(0.,0.,0.), Vector3(0.,0.,0.))
-
-	#print(self.acc_k[0])
-        odom_pub.publish(odom)
+	
     
     def talker(self):
         #pub = rospy.Publisher('/mur/Odom', String, queue_size=10)
