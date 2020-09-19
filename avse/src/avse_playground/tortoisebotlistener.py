@@ -316,6 +316,7 @@ class Server:
 
 	#print(self.acc_k[0])
         odom_pub.publish(odom)
+        #print(self.imu.orientation)
     #def mf_callback(self,mf):
         #self.mf = mf
 	#self.past_heading.append(self.heading)
@@ -356,7 +357,7 @@ class Server:
             self.dx=0
 	    self.dy=0
        
-	self.position = Vector3(self.firstposition[0]-present[0],self.firstposition[1]-present[1],0.0)
+	self.position = Vector3(self.firstposition[0]-present[0],present[1]-self.firstposition[1],0.0)
         self.xk = [self.position.x,self.position.y,self.velocity.x, self.velocity.y]
 
         #self.velocity = gps.twist.twist.linear #Vector3((self.position.x-self.past_position_x[-1])/self.gpsdt, (self.position.y-self.past_position_y[-1])/self.gpsdt, (self.position.z-self.past_position_z[-1])/self.gpsdt)
