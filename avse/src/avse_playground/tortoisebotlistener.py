@@ -277,11 +277,11 @@ class Server:
             # odom.pose.pose = Pose(Point(random.random(), random.random(), 0), self.quaternion_from_euler(0, 0, 0))  # +self.acc_k[0]-self.acc_k[2])))
 
             # ! using random yaw input
-            odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(0, 0, random.random()))
+            # odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(0, 0, random.random()))
 
             # ! original
-            # odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(
-            #     0, 0, self.pi_2_pi(self.acc_k[0][0])))  # +self.acc_k[0]-self.acc_k[2])))
+            odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(
+                0, 0, self.pi_2_pi(self.acc_k[0][0])))  # +self.acc_k[0]-self.acc_k[2])))
 
             # ! can visualise fine if we multiply input by 10
             # odom.pose.pose = Pose(Point(self.x_k[0][0] * 10 , self.x_k[1][0] * 10 , 0.), self.quaternion_from_euler(
