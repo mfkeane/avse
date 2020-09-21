@@ -7,7 +7,7 @@ from geometry_msgs.msg import Vector3, Quaternion, PoseWithCovariance, TwistWith
 from sensor_msgs.msg import NavSatFix, Imu, MagneticField
 from nav_msgs.msg import Odometry
 
-import utm
+import utm # ! would be a good idea to document how best to setup all external dependency
 
 import numpy as np
 # %matplotlib inline
@@ -18,6 +18,8 @@ from sympy import Symbol, symbols, Matrix, sin, cos
 from sympy import init_printing
 from sympy.utilities.codegen import codegen
 init_printing(use_latex=True)
+
+import random
 
 #from filterpy.kalman import KalmanFilter
 
@@ -111,6 +113,13 @@ class Server:
         #self.velocity_time = None
         #self.position_time = None
 
+        # ! move all the publisher stuff here
+        # ! might want to rename this to calibrated GPS
+        self.calibration_bool_pub = rospy.Publisher('mur/CalibratingGPS', Bool, queue_size=1) 
+        self.odom_pub = rospy.Publisher('/mur/Odom', Odometry, queue_size=1)
+        self.odom_fix_pub = rospy.Publisher('/fix/Odom', Odometry, queue_size=1)
+        self.imu_pub = rospy.Publisher('/mur/Imu/filtered', Imu, queue_size=1)
+
     def quaternion_from_euler(self, roll, pitch, yaw):
         qx = np.sin(roll/2) * np.cos(pitch/2) * np.cos(yaw/2) - \
              np.cos(roll/2) * np.sin(pitch/2) * np.sin(yaw/2)
@@ -126,11 +135,16 @@ class Server:
         return (angle + np.pi) % (2*np.pi)-np.pi
 
     def kalman(self):
+
+        # ! start kalman timing
+        start = rospy.get_rostime()
+
+
         # Update time rate
         delta_t = self.gpsdt
         current_time = rospy.Time.now()
 
-        if self.x_k[3] == 0.:
+        if self.x_k[3] == 0.: # ? setting start_time according to x_k ?
             self.start_time = current_time
 
         # POSITION AND VELOCITY
@@ -219,37 +233,74 @@ class Server:
         # Covariance Update (1-K_n)p_(n,n-1)
         self.accP = (np.identity(4)-K.dot(H)).dot(p)
 
+        # ! end kalman timing and print run time
+        end = rospy.get_rostime()
+        difference = (end - start) * 1e-6
+        rospy.loginfo("Kalman execution time (ms): %i", difference.nsecs)
+
         # 30 seconds of calibration before vehicle starts
-        calibration_bool_pub = rospy.Publisher(
-            '/mur/CalibratingGPS', Bool, queue_size=10)
         calibration = Bool()
-        if (current_time.to_sec() - self.start_time.to_sec()) > 10.0:
+
+        # ! check timing
+        time_since_start = (current_time - self.start_time).to_sec()
+        rospy.loginfo("Time since start (s): %f", time_since_start)
+
+        if (current_time.to_sec() - self.start_time.to_sec()) > 10.0: # ! TODO: need to fix this, it does not get set to False
             calibration.data = True
             self.calibrated = True
         else:
             calibration.data = False
-        calibration_bool_pub.publish(calibration)
+        self.calibration_bool_pub.publish(calibration)
         #print((current_time.to_sec() - self.start_time.to_sec()))
 
-        #odom_pub = rospy.Publisher('odometry_publisher', Odometry)
-        odom_pub = rospy.Publisher('/mur/Odom', Odometry, queue_size=10)
+        # ! start timing pub
+        pub_start = rospy.get_rostime()
         #odom_broadcaster = tf.TransformBroadcaster()
 
         odom = Odometry()
         odom.header.stamp = current_time
         odom.header.frame_id = "odom"
         # print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
-        if self.x_k[3] == 0.:
+
+        # odom.pose.pose = Pose(
+        #     Point(self.x_k[0][0], self.x_k[1][0], 0.), 
+        #     self.quaternion_from_euler(0., 0., 0.))
+
+        # odom.pose.pose = Pose(
+        #     Point(0, 0, 0), 
+        #     self.quaternion_from_euler(0., 0., 0.))
+
+        if self.x_k[3] == 0.:                       # ! issues comes from the 'pose' here
             odom.pose.pose = Pose(
-                Point(self.x_k[0], self.x_k[1], 0.), self.quaternion_from_euler(0., 0., 0.))
+                Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(0., 0., 0.))
         else:
-            odom.pose.pose = Pose(Point(self.x_k[0], self.x_k[1], 0.), self.quaternion_from_euler(
-                0, 0, self.pi_2_pi(self.acc_k[0])))  # +self.acc_k[0]-self.acc_k[2])))
+            # odom.pose.pose = Pose(Point(random.random(), random.random(), 0), self.quaternion_from_euler(0, 0, 0))  # +self.acc_k[0]-self.acc_k[2])))
+
+            # ! using random yaw input
+            odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(0, 0, random.random()))
+
+            # ! original
+            # odom.pose.pose = Pose(Point(self.x_k[0][0], self.x_k[1][0], 0.), self.quaternion_from_euler(
+            #     0, 0, self.pi_2_pi(self.acc_k[0][0])))  # +self.acc_k[0]-self.acc_k[2])))
+
+            # ! can visualise fine if we multiply input by 10
+            # odom.pose.pose = Pose(Point(self.x_k[0][0] * 10 , self.x_k[1][0] * 10 , 0.), self.quaternion_from_euler(
+            #     0, 0, self.pi_2_pi(self.acc_k[0][0])))  # +self.acc_k[0]-self.acc_k[2])))
+
         odom.child_frame_id = "base_link"
         odom.twist.twist = Twist(
-            Vector3(self.x_k[2], self.x_k[3], 0.), Vector3(0., 0., 0.))
+            Vector3(self.x_k[2][0], self.x_k[3][0], 0.), Vector3(0., 0., 0.))
+
+        # ! the following dummy output data updates quickly
+        # if self.imu is not None:
+        #     odom.pose.pose = Pose(Point(self.position.x, self.position.y, 0.0), (self.imu.orientation))
+        # else:
+        #     odom.pose.pose = Pose(Point(self.position.x, self.position.y, 0.0), self.quaternion_from_euler(0, 0, 0))
+        # odom.child_frame_id = "base_link"
+        # odom.twist.twist = Twist(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0))
+
         # print(self.acc_k[0])
-        odom_pub.publish(odom)
+        self.odom_pub.publish(odom) # ! want to know what this is slow ???
 
         # Publish Raw IMU for Path Following Control
 
@@ -258,7 +309,10 @@ class Server:
 
             imu_msg = self.imu
             imu_msg.header.stamp = current_time
-            imu_msg.header.frame_id = "imu"
+
+            # ! there is no "imu" frame_id, also should check if all the contents in in the message belong to this imu_link frame
+            imu_msg.header.frame_id = "imu_link" 
+
             if self.x_k[3] == 0.:
                 imu_msg.orientation = self.quaternion_from_euler(0., 0., 0.)
             else:
@@ -266,8 +320,12 @@ class Server:
                     0, 0, self.pi_2_pi(self.acc_k[0]))
                 imu_msg.linear_acceleration = Vector3(
                     self.acceleration.x, self.acceleration.y, 0.0)
-            imu_pub.publish(imu_msg)
-            # r.sleep()
+            self.imu_pub.publish(imu_msg)
+        
+        # ! end timing pub
+        pub_end = rospy.get_rostime()
+        difference = (pub_end - pub_start) * 1e-6
+        rospy.loginfo("Kalman publisher execution time (ms): %f", difference.nsecs)
 
     def imu_callback(self, imu):
         current_time = rospy.Time.now()
@@ -278,7 +336,7 @@ class Server:
         self.past_headingimu.append(self.headingimu)
 
         self.imudt = imu.header.stamp.to_sec() - self.imutime
-        if self.imudt > 1:  # Double check this!
+        if self.imudt > 1:  # Double check this! # ! curious what this is doing ?
             self.gpsdt = 0.02
         self.imutime = imu.header.stamp.to_sec()
 
@@ -323,19 +381,20 @@ class Server:
         self.past_imu = imu
         self.firstimu = 0
 
-        odom_pub = rospy.Publisher('/fix/Odom', Odometry, queue_size=10)
         #odom_broadcaster = tf.TransformBroadcaster()
 
         odom = Odometry()
         odom.header.stamp = current_time
-        odom.header.frame_id = "odom"
+        odom.header.frame_id = "odom"               # ! this is the world frame
         # print(np.arctan2(self.x_k[3].astype(float),self.x_k[2].astype(float)))
         if self.gps is not None:
             odom.pose.pose = Pose(
                 Point(self.position.x, self.position.y, 0.0), (self.imu.orientation))
         else:
             odom.pose.pose = Pose(Point(0.0, 0.0, 0.0), (self.imu.orientation))
+
         odom.child_frame_id = "base_link"
+
         if self.gps_velocity is not None:
             odom.twist.twist = Twist(
                 (self.gps_velocity.vector), Vector3(0., 0., 0.))
@@ -343,7 +402,8 @@ class Server:
             odom.twist.twist = Twist(Vector3(0., 0., 0.), Vector3(0., 0., 0.))
 
         # print(self.acc_k[0])
-        odom_pub.publish(odom)
+        self.odom_fix_pub.publish(odom)
+
     # def mf_callback(self,mf):
         #self.mf = mf
         # self.past_heading.append(self.heading)
@@ -361,7 +421,7 @@ class Server:
 
         self.gps = gps
         self.gpsdt = gps.header.stamp.to_sec() - self.gpstime
-        if self.gpsdt > 5:  # Double check this!
+        if self.gpsdt > 5:  # Double check this! # ! what is this for ?
             self.gpsdt = 1.0
         self.gpstime = gps.header.stamp.to_sec()
         if self.past_gps is not None:
@@ -388,7 +448,7 @@ class Server:
             self.dy = 0
 
         self.position = Vector3(
-            self.firstposition[0]-present[0], self.firstposition[1]-present[1], 0.0)
+            self.firstposition[0]-present[0], self.firstposition[1]-present[1], 0.0) # ! position is updated here
         self.xk = [self.position.x, self.position.y,
                    self.velocity.x, self.velocity.y]
 
